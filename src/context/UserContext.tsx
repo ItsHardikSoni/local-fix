@@ -36,6 +36,7 @@ type UserContextType = {
   session: Session | null;
   authLoading: boolean;
   signIn: (email: string, password: string) => Promise<AuthErrorMessage | null>;
+  signOut: () => Promise<AuthErrorMessage | null>;
   signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{
     error: AuthErrorMessage | null;
     confirmationRequired: boolean;
@@ -93,6 +94,11 @@ export const UserProvider = ({
     return ensureProfileExists(data.user);
   };
 
+  const signOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    return error;
+  };
+
   const signUp = async (email: string, password: string, fullName: string, phone: string) => {
     if (!supabaseConfigured) {
       return {
@@ -122,7 +128,7 @@ export const UserProvider = ({
   };
 
   return (
-    <UserContext.Provider value={{ district, setDistrict, session, authLoading, signIn, signUp }}>
+    <UserContext.Provider value={{ district, setDistrict, session, authLoading, signIn, signOut, signUp }}>
       {children}
     </UserContext.Provider>
   );

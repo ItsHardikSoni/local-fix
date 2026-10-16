@@ -28,7 +28,11 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="technicians"
-        options={{ title: 'Technicians', tabBarIcon: ({ color }) => <MaterialIcons name="engineering" color={color} size={28} /> }}
+          options={{ title: 'Techs', tabBarIcon: ({ color }) => <MaterialIcons name="engineering" color={color} size={28} /> }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{ title: 'Profile', tabBarIcon: ({ color }) => <MaterialIcons name="account-circle" color={color} size={28} /> }}
       />
     </Tabs>
   );
