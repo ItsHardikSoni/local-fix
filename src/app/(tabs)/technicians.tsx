@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 import { ScrollView, View, Text, Button } from 'react-native';
-import { technicians } from '../data/technicians';
-import { useUser } from '../context/UserContext';
-import { Colors } from '../constants/theme';
+import { technicians } from '../../data/technicians';
+import { useUser } from '../../context/UserContext';
+import { Colors } from '../../constants/theme';
 
 export default function Technicians() {
   const router = useRouter();
@@ -11,7 +11,7 @@ export default function Technicians() {
 
   const select = (tech: typeof technicians[0]) => {
     router.push({
-      pathname: '/job',
+      pathname: '/jobs',
       params: { techId: tech.id, type: tech.specialty, desc: '' }, // placeholder desc
     });
   };
