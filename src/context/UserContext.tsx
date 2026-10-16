@@ -10,7 +10,7 @@ type UserContextType = {
   session: Session | null;
   authLoading: boolean;
   signIn: (email: string, password: string) => Promise<AuthErrorMessage | null>;
-  signUp: (email: string, password: string) => Promise<{
+  signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{
     error: AuthErrorMessage | null;
     confirmationRequired: boolean;
   }>;
@@ -65,7 +65,7 @@ export const UserProvider = ({
     return error;
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, fullName: string, phone: string) => {
     if (!supabaseConfigured) {
       return {
         error: { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' },
@@ -73,7 +73,16 @@ export const UserProvider = ({
       };
     }
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          phone: phone || null,
+        },
+      },
+    });
     return { error, confirmationRequired: !error && !data.session };
   };
 

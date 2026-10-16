@@ -18,6 +18,8 @@ import { supabaseConfigured } from '../lib/supabase';
 export default function AuthScreen() {
   const { signIn, signUp } = useUser();
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -37,7 +39,7 @@ export default function AuthScreen() {
           setIsError(true);
         }
       } else {
-        const result = await signUp(email.trim(), password);
+        const result = await signUp(email.trim(), password, fullName.trim(), phone.trim());
         if (result.error) {
           setMessage(result.error.message);
           setIsError(true);
@@ -54,6 +56,7 @@ export default function AuthScreen() {
   };
 
   const isSignUp = mode === 'signUp';
+  const canSubmit = Boolean(email.trim()) && password.length >= 6 && (!isSignUp || Boolean(fullName.trim()));
 
   return (
     <View style={styles.page}>
@@ -100,6 +103,32 @@ export default function AuthScreen() {
             </Pressable>
           </View>
 
+          {isSignUp ? (
+            <>
+              <Text style={styles.label}>Full name</Text>
+              <TextInput
+                autoCapitalize="words"
+                autoComplete="name"
+                onChangeText={setFullName}
+                placeholder="Your full name"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={fullName}
+              />
+
+              <Text style={styles.label}>Phone number (optional)</Text>
+              <TextInput
+                autoComplete="tel"
+                keyboardType="phone-pad"
+                onChangeText={setPhone}
+                placeholder="Your phone number"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={phone}
+              />
+            </>
+          ) : null}
+
           <Text style={styles.label}>Email address</Text>
           <TextInput
             autoCapitalize="none"
@@ -132,9 +161,9 @@ export default function AuthScreen() {
 
           <Pressable
             accessibilityRole="button"
-            disabled={busy || !email.trim() || password.length < 6}
+            disabled={busy || !canSubmit}
             onPress={submit}
-            style={({ pressed }) => [styles.submit, pressed && styles.submitPressed, (busy || !email.trim() || password.length < 6) && styles.submitDisabled]}
+            style={({ pressed }) => [styles.submit, pressed && styles.submitPressed, (busy || !canSubmit) && styles.submitDisabled]}
           >
             {busy ? <ActivityIndicator color={Colors.light.text} /> : (
               <Text style={styles.submitText}>{isSignUp ? 'Create account' : 'Sign in'}</Text>
