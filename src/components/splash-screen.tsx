@@ -1,10 +1,11 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/theme';
 
 export default function SplashScreen() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.brand}>
         <Text style={styles.brandMark}>LF</Text>
       </View>
@@ -12,7 +13,7 @@ export default function SplashScreen() {
       <View style={styles.rule} />
       <Text style={styles.subtitle}>Reliable help, right around you.</Text>
       <ActivityIndicator color={Colors.light.backgroundSelected} style={styles.indicator} />
-    </View>
+    </SafeAreaView>
   );
 }
 

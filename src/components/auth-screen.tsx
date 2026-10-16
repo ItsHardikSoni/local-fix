@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Colors } from '../constants/theme';
 import { useUser } from '../context/UserContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AuthScreen() {
   const { signIn, signUp } = useUser();
@@ -54,18 +55,20 @@ export default function AuthScreen() {
   const isSignUp = mode === 'signUp';
 
   return (
-    <KeyboardAvoidingView
-      style={styles.page}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <View style={styles.headerMark}><Text style={styles.markText}>LF</Text></View>
-          <Text style={styles.wordmark}>LocalFix</Text>
-          <Text style={styles.tagline}>Home repairs, handled.</Text>
-        </View>
+    <View style={styles.page}>
+      <SafeAreaView edges={['top']} style={styles.statusBarInset} />
+      <KeyboardAvoidingView
+        style={styles.keyboardArea}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={styles.header}>
+            <View style={styles.headerMark}><Text style={styles.markText}>LF</Text></View>
+            <Text style={styles.wordmark}>LocalFix</Text>
+            <Text style={styles.tagline}>Home repairs, handled.</Text>
+          </View>
 
-        <View style={styles.form}>
+          <View style={styles.form}>
           <Text style={styles.heading}>{isSignUp ? 'Create your account' : 'Welcome back'}</Text>
           <Text style={styles.description}>
             {isSignUp ? 'Get trusted local help when you need it.' : 'Sign in to continue to your home.'}
@@ -130,14 +133,19 @@ export default function AuthScreen() {
               <Text style={styles.submitText}>{isSignUp ? 'Create account' : 'Sign in'}</Text>
             )}
           </Pressable>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: Colors.light.background },
+  keyboardArea: { flex: 1 },
+  statusBarInset: { backgroundColor: Colors.light.text },
+  bottomSafeArea: { backgroundColor: Colors.light.background },
   content: { flexGrow: 1 },
   header: {
     minHeight: 245,
