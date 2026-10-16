@@ -60,7 +60,6 @@ export default function AuthScreen() {
 
   return (
     <View style={styles.page}>
-      <SafeAreaView edges={['top']} style={styles.statusBarInset} />
       <KeyboardAvoidingView
         style={styles.keyboardArea}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -180,7 +179,6 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: Colors.light.background },
   keyboardArea: { flex: 1 },
-  statusBarInset: { backgroundColor: Colors.light.text },
   bottomSafeArea: { backgroundColor: Colors.light.background },
   content: { flexGrow: 1 },
   header: {

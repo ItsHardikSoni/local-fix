@@ -2,7 +2,7 @@ import React from 'react';
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ThemeProvider from '../components/ThemeProvider';
 import AuthScreen from '../components/auth-screen';
 import SplashScreen from '../components/splash-screen';
@@ -18,37 +18,46 @@ function AppEntry() {
     return () => clearTimeout(timer);
   }, []);
 
-  const statusBar = <StatusBar style={splashElapsed && session ? 'dark' : 'light'} animated />;
-
-  if (!splashElapsed || authLoading) {
-    return <>{statusBar}<SplashScreen /></>;
-  }
-  if (!session) return <>{statusBar}<AuthScreen /></>;
+  const showSplash = !splashElapsed || authLoading;
+  const isSignedIn = !showSplash && Boolean(session);
+  const content = showSplash ? (
+    <SplashScreen />
+  ) : !session ? (
+    <AuthScreen />
+  ) : (
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: Colors.light.background },
+        headerTintColor: Colors.light.text,
+        headerTitleStyle: { fontFamily: 'Inter', fontWeight: '600' },
+      }}
+    >
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    </Stack>
+  );
 
   return (
-    <>
-      {statusBar}
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: Colors.light.background },
-          headerTintColor: Colors.light.text,
-          headerTitleStyle: { fontFamily: 'Inter', fontWeight: '600' },
-        }}
-      >
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      </Stack>
-    </>
+    <SafeAreaView
+      edges={['top']}
+      style={{
+        flex: 1,
+        backgroundColor: isSignedIn ? Colors.light.background : Colors.light.text,
+      }}
+    >
+      <ThemeProvider>
+        <StatusBar style={isSignedIn ? 'dark' : 'light'} animated />
+        {content}
+      </ThemeProvider>
+    </SafeAreaView>
   );
 }
 
 export default function Layout() {
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <UserProvider district="Muzaffarpur">
-          <AppEntry />
-        </UserProvider>
-      </ThemeProvider>
+      <UserProvider district="Muzaffarpur">
+        <AppEntry />
+      </UserProvider>
     </SafeAreaProvider>
   );
 }
