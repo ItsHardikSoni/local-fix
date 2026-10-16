@@ -36,11 +36,6 @@ function AppEntry() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="report" options={{ title: 'Report Issue' }} />
-        <Stack.Screen name="technicians" options={{ title: 'Available Technicians' }} />
-        <Stack.Screen name="job" options={{ title: 'Job Details' }} />
-        <Stack.Screen name="payment" options={{ title: 'Payment' }} />
-        <Stack.Screen name="rating" options={{ title: 'Rate Service' }} />
       </Stack>
     </>
   );
