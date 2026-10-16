@@ -1,10 +1,13 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ThemeProvider from '../components/ThemeProvider';
 import AuthScreen from '../components/auth-screen';
 import SplashScreen from '../components/splash-screen';
 import { UserProvider, useUser } from '../context/UserContext';
+import { Colors } from '../constants/theme';
 
 function AppEntry() {
   const { session, authLoading } = useUser();
@@ -15,33 +18,46 @@ function AppEntry() {
     return () => clearTimeout(timer);
   }, []);
 
-  if (!splashElapsed || authLoading) return <SplashScreen />;
-  if (!session) return <AuthScreen />;
-
-  return (
+  const showSplash = !splashElapsed || authLoading;
+  const isSignedIn = !showSplash && Boolean(session);
+  const content = showSplash ? (
+    <SplashScreen />
+  ) : !session ? (
+    <AuthScreen />
+  ) : (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: '#0d0d0d' },
-        headerTintColor: '#fff',
+        headerStyle: { backgroundColor: Colors.light.background },
+        headerTintColor: Colors.light.text,
         headerTitleStyle: { fontFamily: 'Inter', fontWeight: '600' },
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="report" options={{ title: 'Report Issue' }} />
-      <Stack.Screen name="technicians" options={{ title: 'Available Technicians' }} />
-      <Stack.Screen name="job" options={{ title: 'Job Details' }} />
-      <Stack.Screen name="payment" options={{ title: 'Payment' }} />
-      <Stack.Screen name="rating" options={{ title: 'Rate Service' }} />
     </Stack>
+  );
+
+  return (
+    <SafeAreaView
+      edges={['top']}
+      style={{
+        flex: 1,
+        backgroundColor: isSignedIn ? Colors.light.background : Colors.light.text,
+      }}
+    >
+      <ThemeProvider>
+        <StatusBar style={isSignedIn ? 'dark' : 'light'} animated />
+        {content}
+      </ThemeProvider>
+    </SafeAreaView>
   );
 }
 
 export default function Layout() {
   return (
-    <ThemeProvider>
+    <SafeAreaProvider>
       <UserProvider district="Muzaffarpur">
         <AppEntry />
       </UserProvider>
-    </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
