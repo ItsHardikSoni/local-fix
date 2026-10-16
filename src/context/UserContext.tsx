@@ -1,8 +1,34 @@
 import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
-import type { AuthError, Session } from '@supabase/supabase-js';
+import type { AuthError, Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 
 type AuthErrorMessage = Pick<AuthError, 'message'>;
+
+const ensureProfileExists = async (user: User): Promise<AuthErrorMessage | null> => {
+  const { data: profile, error: lookupError } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (lookupError) return lookupError;
+  if (profile) return null;
+
+  const metadata = user.user_metadata ?? {};
+  const fullName = typeof metadata.full_name === 'string' ? metadata.full_name : '';
+  const phone = typeof metadata.phone === 'string' && metadata.phone.trim()
+    ? metadata.phone
+    : null;
+
+  const { error: insertError } = await supabase.from('profiles').insert({
+    id: user.id,
+    full_name: fullName,
+    phone,
+    email: user.email ?? null,
+  });
+
+  return insertError;
+};
 
 type UserContextType = {
   district: string;
@@ -61,8 +87,10 @@ export const UserProvider = ({
       return { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' };
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return error;
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return error;
+
+    return ensureProfileExists(data.user);
   };
 
   const signUp = async (email: string, password: string, fullName: string, phone: string) => {
@@ -83,7 +111,14 @@ export const UserProvider = ({
         },
       },
     });
-    return { error, confirmationRequired: !error && !data.session };
+
+    if (error) return { error, confirmationRequired: false };
+    if (data.session && data.user) {
+      const profileError = await ensureProfileExists(data.user);
+      if (profileError) return { error: profileError, confirmationRequired: false };
+    }
+
+    return { error: null, confirmationRequired: !data.session };
   };
 
   return (
