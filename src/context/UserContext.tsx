@@ -1,15 +1,17 @@
 import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
 import type { AuthError, Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
+
+type AuthErrorMessage = Pick<AuthError, 'message'>;
 
 type UserContextType = {
   district: string;
   setDistrict: (d: string) => void;
   session: Session | null;
   authLoading: boolean;
-  signIn: (email: string, password: string) => Promise<AuthError | null>;
+  signIn: (email: string, password: string) => Promise<AuthErrorMessage | null>;
   signUp: (email: string, password: string) => Promise<{
-    error: AuthError | null;
+    error: AuthErrorMessage | null;
     confirmationRequired: boolean;
   }>;
 };
@@ -55,11 +57,22 @@ export const UserProvider = ({
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    if (!supabaseConfigured) {
+      return { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' };
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return error;
   };
 
   const signUp = async (email: string, password: string) => {
+    if (!supabaseConfigured) {
+      return {
+        error: { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' },
+        confirmationRequired: false,
+      };
+    }
+
     const { data, error } = await supabase.auth.signUp({ email, password });
     return { error, confirmationRequired: !error && !data.session };
   };

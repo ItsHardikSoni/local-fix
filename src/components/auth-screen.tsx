@@ -13,6 +13,7 @@ import {
 import { Colors } from '../constants/theme';
 import { useUser } from '../context/UserContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabaseConfigured } from '../lib/supabase';
 
 export default function AuthScreen() {
   const { signIn, signUp } = useUser();
@@ -73,6 +74,12 @@ export default function AuthScreen() {
           <Text style={styles.description}>
             {isSignUp ? 'Get trusted local help when you need it.' : 'Sign in to continue to your home.'}
           </Text>
+
+          {!supabaseConfigured ? (
+            <Text style={[styles.message, styles.error]}>
+              Add your Supabase URL and publishable key to the root .env file to enable sign in.
+            </Text>
+          ) : null}
 
           <View style={styles.switcher}>
             <Pressable

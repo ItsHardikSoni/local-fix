@@ -23,6 +23,12 @@ In the output, you'll find options to open the app in a
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
+## Supabase Authentication
+
+Copy `.env.example` to `.env` and fill in the Supabase project URL and publishable key from your project's API settings. The `.env` file is ignored by Git. Restart Expo after changing these values.
+
+Email/password sign-up and sign-in use Supabase Auth. Supabase stores and verifies passwords securely; this app never saves or fetches passwords itself. AsyncStorage persists the Supabase session so returning users can go straight to Home. Do not put a Supabase `service_role` key in the app.
+
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
 ## Get a fresh project
