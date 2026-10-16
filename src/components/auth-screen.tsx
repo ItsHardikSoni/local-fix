@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,6 +15,10 @@ import { Colors } from '../constants/theme';
 import { useUser } from '../context/UserContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabaseConfigured } from '../lib/supabase';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE_PATTERN = /^\d{10}$/;
+const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).{8,}$/;
 
 export default function AuthScreen() {
   const { signIn, signUp } = useUser();
@@ -56,17 +61,34 @@ export default function AuthScreen() {
   };
 
   const isSignUp = mode === 'signUp';
-  const canSubmit = Boolean(email.trim()) && password.length >= 6 && (!isSignUp || Boolean(fullName.trim()));
+  const isEmailValid = EMAIL_PATTERN.test(email.trim());
+  const isPhoneValid = PHONE_PATTERN.test(phone);
+  const isPasswordStrong = PASSWORD_PATTERN.test(password);
+  const canSubmit = isEmailValid && (
+    isSignUp
+      ? Boolean(fullName.trim()) && isPhoneValid && isPasswordStrong
+      : Boolean(password)
+  );
 
   return (
     <View style={styles.page}>
       <KeyboardAvoidingView
         style={styles.keyboardArea}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.header}>
-            <View style={styles.headerMark}><Text style={styles.markText}>LF</Text></View>
+            <Image
+              accessibilityLabel="LocalFix logo"
+              resizeMode="contain"
+              source={require('../../assets/Icon.png')}
+              style={styles.headerLogo}
+            />
             <Text style={styles.wordmark}>LocalFix</Text>
             <Text style={styles.tagline}>Home repairs, handled.</Text>
           </View>
@@ -115,16 +137,19 @@ export default function AuthScreen() {
                 value={fullName}
               />
 
-              <Text style={styles.label}>Phone number (optional)</Text>
+              <Text style={styles.label}>Phone number</Text>
               <TextInput
                 autoComplete="tel"
-                keyboardType="phone-pad"
-                onChangeText={setPhone}
-                placeholder="Your phone number"
+                keyboardType="number-pad"
+                onChangeText={(value) => setPhone(value.replace(/\D/g, ''))}
+                placeholder="10-digit phone number"
                 placeholderTextColor={Colors.light.textSecondary}
                 style={styles.input}
                 value={phone}
               />
+              {phone.length > 0 && !isPhoneValid ? (
+                <Text style={styles.validation}>Enter exactly 10 digits.</Text>
+              ) : null}
             </>
           ) : null}
 
@@ -139,18 +164,26 @@ export default function AuthScreen() {
             style={styles.input}
             value={email}
           />
+          {email.length > 0 && !isEmailValid ? (
+            <Text style={styles.validation}>Enter a valid email address.</Text>
+          ) : null}
 
           <Text style={styles.label}>Password</Text>
           <TextInput
             autoCapitalize="none"
             autoComplete={isSignUp ? 'new-password' : 'password'}
             onChangeText={setPassword}
-            placeholder="At least 6 characters"
+            placeholder={isSignUp ? '8+ characters with upper/lowercase, number, symbol' : 'Your password'}
             placeholderTextColor={Colors.light.textSecondary}
             secureTextEntry
             style={styles.input}
             value={password}
           />
+          {isSignUp && password.length > 0 && !isPasswordStrong ? (
+            <Text style={styles.validation}>
+              Use at least 8 characters with uppercase, lowercase, a number, and a special character.
+            </Text>
+          ) : null}
 
           {message ? (
             <Text accessibilityRole="alert" style={[styles.message, isError && styles.error]}>
@@ -188,15 +221,7 @@ const styles = StyleSheet.create({
     paddingTop: 28,
     backgroundColor: Colors.light.text,
   },
-  headerMark: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    backgroundColor: Colors.light.backgroundSelected,
-  },
-  markText: { color: Colors.light.text, fontSize: 18, fontWeight: '900' },
+  headerLogo: { width: 60, height: 60, borderRadius: 12 },
   wordmark: { marginTop: 18, color: Colors.light.backgroundElement, fontSize: 30, fontWeight: '800' },
   tagline: { marginTop: 5, color: '#D6DFEA', fontSize: 15 },
   form: { width: '100%', maxWidth: 520, alignSelf: 'center', padding: 24 },
@@ -214,6 +239,7 @@ const styles = StyleSheet.create({
   switchText: { color: Colors.light.textSecondary, fontSize: 14, fontWeight: '600' },
   switchTextSelected: { color: Colors.light.text },
   label: { marginBottom: 8, color: Colors.light.text, fontSize: 13, fontWeight: '600' },
+  validation: { marginTop: -12, marginBottom: 14, color: '#B42318', fontSize: 12, lineHeight: 17 },
   input: {
     minHeight: 50,
     marginBottom: 18,
