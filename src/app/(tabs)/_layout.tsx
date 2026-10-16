@@ -11,23 +11,24 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: Colors.light.background },
         headerTintColor: Colors.light.text,
         headerTitleStyle: { fontFamily: 'Inter', fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 13, fontWeight: '600' },
       }}
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <MaterialIcons name="home" color={color} size={size} /> }}
+        options={{ title: 'Home', tabBarIcon: ({ color }) => <MaterialIcons name="home" color={color} size={28} /> }}
       />
       <Tabs.Screen
         name="jobs"
-        options={{ title: 'My Jobs', tabBarIcon: ({ color, size }) => <MaterialIcons name="work" color={color} size={size} /> }}
+        options={{ title: 'My Jobs', tabBarIcon: ({ color }) => <MaterialIcons name="work" color={color} size={28} /> }}
       />
       <Tabs.Screen
         name="report"
-        options={{ title: 'Report', tabBarIcon: ({ color, size }) => <MaterialIcons name="report" color={color} size={size} /> }}
+        options={{ title: 'Report', tabBarIcon: ({ color }) => <MaterialIcons name="report" color={color} size={28} /> }}
       />
       <Tabs.Screen
         name="technicians"
-        options={{ title: 'Technicians', tabBarIcon: ({ color, size }) => <MaterialIcons name="engineering" color={color} size={size} /> }}
+        options={{ title: 'Technicians', tabBarIcon: ({ color }) => <MaterialIcons name="engineering" color={color} size={28} /> }}
       />
     </Tabs>
   );
