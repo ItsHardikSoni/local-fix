@@ -14,6 +14,7 @@ import {
 import { Colors } from '../constants/theme';
 import { useUser } from '../context/UserContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { supabaseConfigured } from '../lib/supabase';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -27,6 +28,7 @@ export default function AuthScreen() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
@@ -169,16 +171,32 @@ export default function AuthScreen() {
           ) : null}
 
           <Text style={styles.label}>Password</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoComplete={isSignUp ? 'new-password' : 'password'}
-            onChangeText={setPassword}
-            placeholder={isSignUp ? '8+ characters with upper/lowercase, number, symbol' : 'Your password'}
-            placeholderTextColor={Colors.light.textSecondary}
-            secureTextEntry
-            style={styles.input}
-            value={password}
-          />
+          <View style={styles.passwordField}>
+            <TextInput
+              autoCapitalize="none"
+              autoComplete={isSignUp ? 'new-password' : 'password'}
+              onChangeText={setPassword}
+              placeholder={isSignUp ? '8+ characters with upper/lowercase, number, symbol' : 'Your password'}
+              placeholderTextColor={Colors.light.textSecondary}
+              secureTextEntry={!passwordVisible}
+              style={[styles.input, styles.passwordInput]}
+              value={password}
+            />
+            <Pressable
+              accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'}
+              accessibilityRole="button"
+              accessibilityState={{ checked: passwordVisible }}
+              hitSlop={8}
+              onPress={() => setPasswordVisible((visible) => !visible)}
+              style={({ pressed }) => [styles.passwordToggle, pressed && styles.passwordTogglePressed]}
+            >
+              <MaterialIcons
+                name={passwordVisible ? 'visibility-off' : 'visibility'}
+                size={22}
+                color={Colors.light.textSecondary}
+              />
+            </Pressable>
+          </View>
           {isSignUp && password.length > 0 && !isPasswordStrong ? (
             <Text style={styles.validation}>
               Use at least 8 characters with uppercase, lowercase, a number, and a special character.
@@ -240,6 +258,19 @@ const styles = StyleSheet.create({
   switchTextSelected: { color: Colors.light.text },
   label: { marginBottom: 8, color: Colors.light.text, fontSize: 13, fontWeight: '600' },
   validation: { marginTop: -12, marginBottom: 14, color: '#B42318', fontSize: 12, lineHeight: 17 },
+  passwordField: { position: 'relative' },
+  passwordInput: { paddingRight: 56 },
+  passwordToggle: {
+    position: 'absolute',
+    top: 0,
+    right: 4,
+    width: 48,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  passwordTogglePressed: { opacity: 0.65 },
   input: {
     minHeight: 50,
     marginBottom: 18,
