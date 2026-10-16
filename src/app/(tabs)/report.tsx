@@ -16,15 +16,15 @@ export default function Report() {
   };
 
   return (
-    <View className="p-4 gap-4">
-      <Text className="text-xl font-bold" style={{ color: Colors.light.text }}>
+    <View style={{ padding: 16, gap: 16 }}>
+      <Text style={{ color: Colors.light.text, fontSize: 20, fontWeight: 'bold' }}>
         Report Issue
       </Text>
       <TextInput
         placeholder="Issue type (e.g., Water Leak)"
         value={type}
         onChangeText={setType}
-        style={{ borderWidth: 1, borderColor: '#ccc', padding: 8, borderRadius: 4, backgroundColor: Colors.light.backgroundElement, color: Colors.light.text }}
+        style={{ borderWidth: 1, borderColor: Colors.light.backgroundElement, padding: 8, borderRadius: 4, backgroundColor: Colors.light.backgroundElement, color: Colors.light.text }}
       />
       <TextInput
         placeholder="Describe the problem"
@@ -32,7 +32,7 @@ export default function Report() {
         onChangeText={setDesc}
         multiline
         numberOfLines={4}
-        style={{ borderWidth: 1, borderColor: '#ccc', padding: 8, borderRadius: 4, backgroundColor: Colors.light.backgroundElement, color: Colors.light.text }}
+        style={{ borderWidth: 1, borderColor: Colors.light.backgroundElement, padding: 8, borderRadius: 4, backgroundColor: Colors.light.backgroundElement, color: Colors.light.text }}
       />
       <Button title="Find Technicians" onPress={onSubmit} color={Colors.light.backgroundSelected} />
     </View>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Button, StyleSheet } from 'react-native';
+import { Alert, View, Text, Button, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useUser } from '../../context/UserContext';
 import { Colors } from '../../constants/theme';
@@ -40,11 +40,19 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <Button title="Report a Problem" onPress={() => router.push('/create-job')} color={Colors.light.backgroundSelected} />
+      <Button title="Report a Problem" onPress={() => router.push('/report')} color={Colors.light.backgroundSelected} />
       <View style={{ height: 12 }} />
-      <Button title="Worker Sign‑Up" onPress={() => router.push('/worker-register')} color={Colors.light.text} />
+      <Button
+        title="Worker Sign‑Up"
+        onPress={() => Alert.alert('Coming soon', 'Worker registration is not available yet.')}
+        color={Colors.light.text}
+      />
       <View style={{ height: 12 }} />
-      <Button title="Resident Sign‑Up / Edit Profile" onPress={() => router.push('/register')} color={Colors.light.text} />
+      <Button
+        title="Resident Sign‑Up / Edit Profile"
+        onPress={() => Alert.alert('Coming soon', 'Resident profile management is not available yet.')}
+        color={Colors.light.text}
+      />
     </View>
   );
 }

@@ -1,15 +1,13 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { View, Text, Button } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { Alert, View, Text, Button } from 'react-native';
 import { technicians } from '../../data/technicians';
 import { Colors } from '../../constants/theme';
 export default function Job() {
   const { techId, type, desc } = useLocalSearchParams();
-  const router = useRouter();
   const tech = technicians.find(t => t.id === Number(techId));
 
   const onConfirm = () => {
-    // In a real app you'd submit the job to backend here.
-    router.push('/payment');
+    Alert.alert('Payment unavailable', 'The payment screen is not available yet.');
   };
 
   if (!tech) {
@@ -27,7 +25,7 @@ export default function Job() {
       <Text>Description: {desc}</Text>
       <Text>Technician: {tech.name} ({tech.specialty})</Text>
       <Text>Rate: ₹{tech.pricePerHour}/hr</Text>
-      <Button title="Confirm & Proceed to Payment" onPress={onConfirm} color={Colors.light.backgroundSelected} />
+      <Button title="View payment options" onPress={onConfirm} color={Colors.light.backgroundSelected} />
     </View>
   );
 }
