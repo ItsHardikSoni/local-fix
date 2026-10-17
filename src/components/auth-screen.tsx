@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -22,7 +23,18 @@ const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).{8
 
 export default function AuthScreen() {
   const { signIn, signUp } = useUser();
+  const scrollAreaRef = useRef<View>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const focusedInputRef = useRef<TextInput | null>(null);
+  const inputRefs = {
+    fullName: useRef<TextInput>(null),
+    phone: useRef<TextInput>(null),
+    email: useRef<TextInput>(null),
+    password: useRef<TextInput>(null),
+  };
+  const scrollOffsetRef = useRef(0);
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -31,6 +43,56 @@ export default function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
+
+  const scrollFocusedInputIntoView = useCallback(() => {
+    requestAnimationFrame(() => {
+      const input = focusedInputRef.current;
+      const keyboardTop = Keyboard.metrics()?.screenY;
+      if (!input || keyboardTop === undefined) return;
+
+      input.measureInWindow((_inputX, inputY, _inputWidth, inputHeight) => {
+        scrollAreaRef.current?.measureInWindow((_areaX, areaY, _areaWidth, areaHeight) => {
+          const areaBottom = Math.min(areaY + areaHeight, keyboardTop);
+          const inputBottom = inputY + inputHeight;
+          const bottomGap = areaBottom - inputBottom;
+          const scrollDelta = bottomGap < 24
+            ? 24 - bottomGap
+            : inputY < areaY + 16
+              ? inputY - (areaY + 16)
+              : 0;
+
+          if (scrollDelta !== 0) {
+            scrollViewRef.current?.scrollTo({
+              y: Math.max(0, scrollOffsetRef.current + scrollDelta),
+              animated: true,
+            });
+          }
+        });
+      });
+    });
+  }, []);
+
+  const focusInput = useCallback((input: TextInput | null) => {
+    focusedInputRef.current = input;
+    scrollFocusedInputIntoView();
+  }, [scrollFocusedInputIntoView]);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
+      scrollFocusedInputIntoView();
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+      scrollOffsetRef.current = 0;
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [scrollFocusedInputIntoView]);
 
   const submit = async () => {
     setBusy(true);
@@ -73,14 +135,19 @@ export default function AuthScreen() {
 
   return (
     <View style={styles.page}>
-      <View style={styles.scrollArea}>
+      <View ref={scrollAreaRef} style={styles.scrollArea}>
         <ScrollView
+          ref={scrollViewRef}
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           contentContainerStyle={styles.content}
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
+          onScroll={(event) => {
+            scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
         >
-          <View style={styles.header}>
+          {!keyboardVisible ? <View style={styles.header}>
             <Image
               accessibilityLabel="LocalFix logo"
               resizeMode="contain"
@@ -89,7 +156,7 @@ export default function AuthScreen() {
             />
             <Text style={styles.wordmark}>LocalFix</Text>
             <Text style={styles.tagline}>Home repairs, handled.</Text>
-          </View>
+          </View> : null}
 
           <View style={styles.form}>
           <Text style={styles.heading}>{isSignUp ? 'Create your account' : 'Welcome back'}</Text>
@@ -126,9 +193,11 @@ export default function AuthScreen() {
             <>
               <Text style={styles.label}>Full name</Text>
               <TextInput
+                ref={inputRefs.fullName}
                 autoCapitalize="words"
                 autoComplete="name"
                 onChangeText={setFullName}
+                onFocus={() => focusInput(inputRefs.fullName.current)}
                 placeholder="Your full name"
                 placeholderTextColor={Colors.light.textSecondary}
                 style={styles.input}
@@ -137,9 +206,11 @@ export default function AuthScreen() {
 
               <Text style={styles.label}>Phone number</Text>
               <TextInput
+                ref={inputRefs.phone}
                 autoComplete="tel"
                 keyboardType="number-pad"
                 onChangeText={(value) => setPhone(value.replace(/\D/g, ''))}
+                onFocus={() => focusInput(inputRefs.phone.current)}
                 placeholder="10-digit phone number"
                 placeholderTextColor={Colors.light.textSecondary}
                 style={styles.input}
@@ -153,10 +224,12 @@ export default function AuthScreen() {
 
           <Text style={styles.label}>Email address</Text>
           <TextInput
+            ref={inputRefs.email}
             autoCapitalize="none"
             autoComplete="email"
             keyboardType="email-address"
             onChangeText={setEmail}
+            onFocus={() => focusInput(inputRefs.email.current)}
             placeholder="you@example.com"
             placeholderTextColor={Colors.light.textSecondary}
             style={styles.input}
@@ -169,9 +242,11 @@ export default function AuthScreen() {
           <Text style={styles.label}>Password</Text>
           <View style={styles.passwordField}>
             <TextInput
+              ref={inputRefs.password}
               autoCapitalize="none"
               autoComplete={isSignUp ? 'new-password' : 'password'}
               onChangeText={setPassword}
+              onFocus={() => focusInput(inputRefs.password.current)}
               placeholder={isSignUp ? '8+ characters with upper/lowercase, number, symbol' : 'Your password'}
               placeholderTextColor={Colors.light.textSecondary}
               secureTextEntry={!passwordVisible}
