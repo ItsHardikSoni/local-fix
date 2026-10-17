@@ -16,6 +16,8 @@ type ThemedAlertProps = {
   actionLabel: string;
   onAction: () => void;
   onClose: () => void;
+  cancelLabel?: string;
+  onCancel?: () => void;
 };
 
 export default function ThemedAlert({
@@ -25,6 +27,8 @@ export default function ThemedAlert({
   actionLabel,
   onAction,
   onClose,
+  cancelLabel,
+  onCancel,
 }: ThemedAlertProps) {
   return (
     <Modal
@@ -46,13 +50,24 @@ export default function ThemedAlert({
           </View>
           <Text accessibilityRole="header" style={styles.title}>{title}</Text>
           <Text style={styles.message}>{message}</Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={onAction}
-            style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
-          >
-            <Text style={styles.actionText}>{actionLabel}</Text>
-          </Pressable>
+          <View style={styles.actions}>
+            {cancelLabel && onCancel ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={onCancel}
+                style={({ pressed }) => [styles.cancelAction, pressed && styles.actionPressed]}
+              >
+                <Text style={styles.cancelText}>{cancelLabel}</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={onAction}
+              style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+            >
+              <Text style={styles.actionText}>{actionLabel}</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
@@ -97,15 +112,24 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'center',
   },
+  actions: { flexDirection: 'row', alignSelf: 'stretch', gap: 10, marginTop: 22 },
   action: {
     minHeight: 48,
-    alignSelf: 'stretch',
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 22,
     borderRadius: 12,
     backgroundColor: Colors.light.backgroundSelected,
   },
+  cancelAction: {
+    minHeight: 48,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#EFF3F8',
+  },
   actionPressed: { opacity: 0.82 },
   actionText: { color: Colors.light.text, fontSize: 15, fontWeight: '700' },
+  cancelText: { color: Colors.light.textSecondary, fontSize: 15, fontWeight: '700' },
 });
