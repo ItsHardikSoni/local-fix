@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -135,18 +136,22 @@ export default function AuthScreen() {
 
   return (
     <View style={styles.page}>
-      <View ref={scrollAreaRef} style={styles.scrollArea}>
-        <ScrollView
-          ref={scrollViewRef}
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
-          contentContainerStyle={styles.content}
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          keyboardShouldPersistTaps="handled"
-          onScroll={(event) => {
-            scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
-          }}
-          scrollEventThrottle={16}
-        >
+      <KeyboardAvoidingView
+        style={styles.keyboardArea}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View ref={scrollAreaRef} style={styles.scrollArea}>
+          <ScrollView
+            ref={scrollViewRef}
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+            contentContainerStyle={styles.content}
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardShouldPersistTaps="handled"
+            onScroll={(event) => {
+              scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
+          >
           {!keyboardVisible ? <View style={styles.header}>
             <Image
               accessibilityLabel="LocalFix logo"
@@ -280,6 +285,13 @@ export default function AuthScreen() {
             </Text>
           ) : null}
 
+          </View>
+          </ScrollView>
+        </View>
+        <SafeAreaView
+          edges={keyboardVisible ? [] : ['bottom']}
+          style={styles.submitBar}
+        >
           <Pressable
             accessibilityRole="button"
             disabled={busy || !canSubmit}
@@ -290,18 +302,23 @@ export default function AuthScreen() {
               <Text style={styles.submitText}>{isSignUp ? 'Create account' : 'Sign in'}</Text>
             )}
           </Pressable>
-          </View>
-        </ScrollView>
-      </View>
-      <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea} />
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: Colors.light.background },
+  keyboardArea: { flex: 1 },
   scrollArea: { flex: 1 },
-  bottomSafeArea: { backgroundColor: Colors.light.background },
+  submitBar: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    backgroundColor: Colors.light.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#D8E0E9',
+  },
   content: { flexGrow: 1, paddingBottom: 24 },
   header: {
     minHeight: 245,
@@ -359,7 +376,6 @@ const styles = StyleSheet.create({
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
     borderRadius: 8,
     backgroundColor: Colors.light.backgroundSelected,
   },
