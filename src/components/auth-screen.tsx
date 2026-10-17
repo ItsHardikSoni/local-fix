@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -74,10 +73,7 @@ export default function AuthScreen() {
 
   return (
     <View style={styles.page}>
-      <KeyboardAvoidingView
-        style={styles.keyboardArea}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View style={styles.scrollArea}>
         <ScrollView
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           contentContainerStyle={styles.content}
@@ -221,7 +217,7 @@ export default function AuthScreen() {
           </Pressable>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
       <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea} />
     </View>
   );
@@ -229,9 +225,9 @@ export default function AuthScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: Colors.light.background },
-  keyboardArea: { flex: 1 },
+  scrollArea: { flex: 1 },
   bottomSafeArea: { backgroundColor: Colors.light.background },
-  content: { flexGrow: 1 },
+  content: { flexGrow: 1, paddingBottom: 24 },
   header: {
     minHeight: 245,
     justifyContent: 'center',
