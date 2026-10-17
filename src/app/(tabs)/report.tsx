@@ -1,12 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, TextInput, Button, Text } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 
 export default function Report() {
   const router = useRouter();
+  const { type: initialType } = useLocalSearchParams<{ type?: string }>();
   const [type, setType] = useState('Water Leak');
   const [desc, setDesc] = useState('');
+
+  useEffect(() => {
+    if (typeof initialType === 'string' && initialType.trim()) {
+      setType(initialType);
+    }
+  }, [initialType]);
 
   const onSubmit = () => {
     router.push({

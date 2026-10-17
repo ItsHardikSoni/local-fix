@@ -27,7 +27,7 @@ In the output, you'll find options to open the app in a
 
 Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the root `.env` using the project URL and publishable/anon key from your Supabase API settings. The `.env` file is ignored by Git. Restart Expo after changing these values.
 
-Run [`supabase/profiles.sql`](supabase/profiles.sql) in the Supabase SQL editor after creating the `public.profiles` table. It creates a profile when an auth user signs up and allows authenticated users to read only their own profile. Sign-up collects full name and optional phone; email comes from Supabase Auth, and the table defaults supply status and timestamps.
+Run [`supabase/profiles.sql`](supabase/profiles.sql) in the Supabase SQL editor after creating the `public.profiles` table. It creates a profile when an auth user signs up, allows authenticated users to read only their own profile, and adds the table to the `supabase_realtime` publication. The profile screen fetches the signed-in user's row and listens for changes to it. Sign-up collects full name and optional phone; email comes from Supabase Auth, and the table defaults supply status and timestamps.
 
 Email/password sign-up and sign-in use Supabase Auth. Supabase stores and verifies passwords securely; this app never saves or fetches passwords itself. AsyncStorage persists the Supabase session so returning users can go straight to Home. Do not put a Supabase `service_role` key in the app.
 

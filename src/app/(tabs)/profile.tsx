@@ -5,16 +5,19 @@ import { Colors } from '../../constants/theme';
 import { useUser } from '../../context/UserContext';
 
 export default function ProfileScreen() {
-  const { session, signOut } = useUser();
+  const { session, profile, profileLoading, profileError, signOut } = useUser();
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const user = session?.user;
-  const fullName = typeof user?.user_metadata?.full_name === 'string'
+  const metadataFullName = typeof user?.user_metadata?.full_name === 'string'
     ? user.user_metadata.full_name
-    : 'LocalFix user';
-  const phone = typeof user?.user_metadata?.phone === 'string'
+    : null;
+  const metadataPhone = typeof user?.user_metadata?.phone === 'string'
     ? user.user_metadata.phone
-    : 'Not provided';
+    : null;
+  const fullName = profile?.full_name || metadataFullName || 'LocalFix user';
+  const phone = profile?.phone || metadataPhone || 'Not provided';
+  const email = profile?.email || user?.email || 'No email available';
 
   const handleSignOut = async () => {
     setBusy(true);
@@ -43,11 +46,15 @@ export default function ProfileScreen() {
 
       <View style={styles.details}>
         <Text style={styles.label}>Email</Text>
-        <Text style={styles.value}>{user?.email ?? 'No email available'}</Text>
+        <Text style={styles.value}>{email}</Text>
         <Text style={styles.label}>Phone</Text>
         <Text style={styles.value}>{phone}</Text>
       </View>
 
+      {profileLoading ? (
+        <ActivityIndicator accessibilityLabel="Loading profile" color={Colors.light.backgroundSelected} />
+      ) : null}
+      {profileError ? <Text accessibilityRole="alert" style={styles.error}>{profileError}</Text> : null}
       {errorMessage ? <Text accessibilityRole="alert" style={styles.error}>{errorMessage}</Text> : null}
 
       <Pressable
