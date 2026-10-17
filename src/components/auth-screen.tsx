@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,18 +15,85 @@ import {
 import { Colors } from '../constants/theme';
 import { useUser } from '../context/UserContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { supabaseConfigured } from '../lib/supabase';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE_PATTERN = /^\d{10}$/;
+const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).{8,}$/;
 
 export default function AuthScreen() {
   const { signIn, signUp } = useUser();
+  const scrollAreaRef = useRef<View>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const focusedInputRef = useRef<TextInput | null>(null);
+  const inputRefs = {
+    fullName: useRef<TextInput>(null),
+    phone: useRef<TextInput>(null),
+    email: useRef<TextInput>(null),
+    password: useRef<TextInput>(null),
+  };
+  const scrollOffsetRef = useRef(0);
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
+
+  const scrollFocusedInputIntoView = useCallback(() => {
+    requestAnimationFrame(() => {
+      const input = focusedInputRef.current;
+      const keyboardTop = Keyboard.metrics()?.screenY;
+      if (!input || keyboardTop === undefined) return;
+
+      input.measureInWindow((_inputX, inputY, _inputWidth, inputHeight) => {
+        scrollAreaRef.current?.measureInWindow((_areaX, areaY, _areaWidth, areaHeight) => {
+          const areaBottom = Math.min(areaY + areaHeight, keyboardTop);
+          const inputBottom = inputY + inputHeight;
+          const bottomGap = areaBottom - inputBottom;
+          const scrollDelta = bottomGap < 24
+            ? 24 - bottomGap
+            : inputY < areaY + 16
+              ? inputY - (areaY + 16)
+              : 0;
+
+          if (scrollDelta !== 0) {
+            scrollViewRef.current?.scrollTo({
+              y: Math.max(0, scrollOffsetRef.current + scrollDelta),
+              animated: true,
+            });
+          }
+        });
+      });
+    });
+  }, []);
+
+  const focusInput = useCallback((input: TextInput | null) => {
+    focusedInputRef.current = input;
+    scrollFocusedInputIntoView();
+  }, [scrollFocusedInputIntoView]);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
+      scrollFocusedInputIntoView();
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+      scrollOffsetRef.current = 0;
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [scrollFocusedInputIntoView]);
 
   const submit = async () => {
     setBusy(true);
@@ -56,7 +125,14 @@ export default function AuthScreen() {
   };
 
   const isSignUp = mode === 'signUp';
-  const canSubmit = Boolean(email.trim()) && password.length >= 6 && (!isSignUp || Boolean(fullName.trim()));
+  const isEmailValid = EMAIL_PATTERN.test(email.trim());
+  const isPhoneValid = PHONE_PATTERN.test(phone);
+  const isPasswordStrong = PASSWORD_PATTERN.test(password);
+  const canSubmit = isEmailValid && (
+    isSignUp
+      ? Boolean(fullName.trim()) && isPhoneValid && isPasswordStrong
+      : Boolean(password)
+  );
 
   return (
     <View style={styles.page}>
@@ -64,12 +140,28 @@ export default function AuthScreen() {
         style={styles.keyboardArea}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <View style={styles.headerMark}><Text style={styles.markText}>LF</Text></View>
+        <View ref={scrollAreaRef} style={styles.scrollArea}>
+          <ScrollView
+            ref={scrollViewRef}
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+            contentContainerStyle={styles.content}
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardShouldPersistTaps="handled"
+            onScroll={(event) => {
+              scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
+          >
+          {!keyboardVisible ? <View style={styles.header}>
+            <Image
+              accessibilityLabel="LocalFix logo"
+              resizeMode="contain"
+              source={require('../../assets/Icon.png')}
+              style={styles.headerLogo}
+            />
             <Text style={styles.wordmark}>LocalFix</Text>
             <Text style={styles.tagline}>Home repairs, handled.</Text>
-          </View>
+          </View> : null}
 
           <View style={styles.form}>
           <Text style={styles.heading}>{isSignUp ? 'Create your account' : 'Welcome back'}</Text>
@@ -106,51 +198,86 @@ export default function AuthScreen() {
             <>
               <Text style={styles.label}>Full name</Text>
               <TextInput
+                ref={inputRefs.fullName}
                 autoCapitalize="words"
                 autoComplete="name"
                 onChangeText={setFullName}
+                onFocus={() => focusInput(inputRefs.fullName.current)}
                 placeholder="Your full name"
                 placeholderTextColor={Colors.light.textSecondary}
                 style={styles.input}
                 value={fullName}
               />
 
-              <Text style={styles.label}>Phone number (optional)</Text>
+              <Text style={styles.label}>Phone number</Text>
               <TextInput
+                ref={inputRefs.phone}
                 autoComplete="tel"
-                keyboardType="phone-pad"
-                onChangeText={setPhone}
-                placeholder="Your phone number"
+                keyboardType="number-pad"
+                onChangeText={(value) => setPhone(value.replace(/\D/g, ''))}
+                onFocus={() => focusInput(inputRefs.phone.current)}
+                placeholder="10-digit phone number"
                 placeholderTextColor={Colors.light.textSecondary}
                 style={styles.input}
                 value={phone}
               />
+              {phone.length > 0 && !isPhoneValid ? (
+                <Text style={styles.validation}>Enter exactly 10 digits.</Text>
+              ) : null}
             </>
           ) : null}
 
           <Text style={styles.label}>Email address</Text>
           <TextInput
+            ref={inputRefs.email}
             autoCapitalize="none"
             autoComplete="email"
             keyboardType="email-address"
             onChangeText={setEmail}
+            onFocus={() => focusInput(inputRefs.email.current)}
             placeholder="you@example.com"
             placeholderTextColor={Colors.light.textSecondary}
             style={styles.input}
             value={email}
           />
+          {email.length > 0 && !isEmailValid ? (
+            <Text style={styles.validation}>Enter a valid email address.</Text>
+          ) : null}
 
           <Text style={styles.label}>Password</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoComplete={isSignUp ? 'new-password' : 'password'}
-            onChangeText={setPassword}
-            placeholder="At least 6 characters"
-            placeholderTextColor={Colors.light.textSecondary}
-            secureTextEntry
-            style={styles.input}
-            value={password}
-          />
+          <View style={styles.passwordField}>
+            <TextInput
+              ref={inputRefs.password}
+              autoCapitalize="none"
+              autoComplete={isSignUp ? 'new-password' : 'password'}
+              onChangeText={setPassword}
+              onFocus={() => focusInput(inputRefs.password.current)}
+              placeholder={isSignUp ? '8+ characters with upper/lowercase, number, symbol' : 'Your password'}
+              placeholderTextColor={Colors.light.textSecondary}
+              secureTextEntry={!passwordVisible}
+              style={[styles.input, styles.passwordInput]}
+              value={password}
+            />
+            <Pressable
+              accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'}
+              accessibilityRole="button"
+              accessibilityState={{ checked: passwordVisible }}
+              hitSlop={8}
+              onPress={() => setPasswordVisible((visible) => !visible)}
+              style={({ pressed }) => [styles.passwordToggle, pressed && styles.passwordTogglePressed]}
+            >
+              <MaterialIcons
+                name={passwordVisible ? 'visibility-off' : 'visibility'}
+                size={22}
+                color={Colors.light.textSecondary}
+              />
+            </Pressable>
+          </View>
+          {isSignUp && password.length > 0 && !isPasswordStrong ? (
+            <Text style={styles.validation}>
+              Use at least 8 characters with uppercase, lowercase, a number, and a special character.
+            </Text>
+          ) : null}
 
           {message ? (
             <Text accessibilityRole="alert" style={[styles.message, isError && styles.error]}>
@@ -158,6 +285,13 @@ export default function AuthScreen() {
             </Text>
           ) : null}
 
+          </View>
+          </ScrollView>
+        </View>
+        <SafeAreaView
+          edges={keyboardVisible ? [] : ['bottom']}
+          style={styles.submitBar}
+        >
           <Pressable
             accessibilityRole="button"
             disabled={busy || !canSubmit}
@@ -168,10 +302,8 @@ export default function AuthScreen() {
               <Text style={styles.submitText}>{isSignUp ? 'Create account' : 'Sign in'}</Text>
             )}
           </Pressable>
-          </View>
-        </ScrollView>
+        </SafeAreaView>
       </KeyboardAvoidingView>
-      <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea} />
     </View>
   );
 }
@@ -179,27 +311,42 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: Colors.light.background },
   keyboardArea: { flex: 1 },
-  bottomSafeArea: { backgroundColor: Colors.light.background },
-  content: { flexGrow: 1 },
+  scrollArea: { flex: 1 },
+  submitBar: {
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 8,
+    backgroundColor: Colors.light.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#D8E0E9',
+  },
+  content: { flexGrow: 1, paddingBottom: 24 },
   header: {
-    minHeight: 245,
+    minHeight: 205,
     justifyContent: 'center',
     paddingHorizontal: 28,
     paddingTop: 28,
+    paddingBottom: 30,
     backgroundColor: Colors.light.text,
   },
-  headerMark: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    backgroundColor: Colors.light.backgroundSelected,
-  },
-  markText: { color: Colors.light.text, fontSize: 18, fontWeight: '900' },
-  wordmark: { marginTop: 18, color: Colors.light.backgroundElement, fontSize: 30, fontWeight: '800' },
+  headerLogo: { width: 54, height: 54, borderRadius: 12 },
+  wordmark: { marginTop: 13, color: Colors.light.backgroundElement, fontSize: 28, fontWeight: '800' },
   tagline: { marginTop: 5, color: '#D6DFEA', fontSize: 15 },
-  form: { width: '100%', maxWidth: 520, alignSelf: 'center', padding: 24 },
+  form: {
+    width: '92%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    marginTop: 16,
+    marginBottom: 22,
+    padding: 22,
+    borderRadius: 20,
+    backgroundColor: Colors.light.backgroundElement,
+    elevation: 2,
+    shadowColor: Colors.light.text,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+  },
   heading: { color: Colors.light.text, fontSize: 23, fontWeight: '700' },
   description: { marginTop: 7, marginBottom: 22, color: Colors.light.textSecondary, fontSize: 14 },
   switcher: {
@@ -214,6 +361,20 @@ const styles = StyleSheet.create({
   switchText: { color: Colors.light.textSecondary, fontSize: 14, fontWeight: '600' },
   switchTextSelected: { color: Colors.light.text },
   label: { marginBottom: 8, color: Colors.light.text, fontSize: 13, fontWeight: '600' },
+  validation: { marginTop: -12, marginBottom: 14, color: '#B42318', fontSize: 12, lineHeight: 17 },
+  passwordField: { position: 'relative' },
+  passwordInput: { paddingRight: 56 },
+  passwordToggle: {
+    position: 'absolute',
+    top: 0,
+    right: 4,
+    width: 48,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  passwordTogglePressed: { opacity: 0.65 },
   input: {
     minHeight: 50,
     marginBottom: 18,
@@ -231,7 +392,6 @@ const styles = StyleSheet.create({
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
     borderRadius: 8,
     backgroundColor: Colors.light.backgroundSelected,
   },

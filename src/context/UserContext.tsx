@@ -4,6 +4,34 @@ import { supabase, supabaseConfigured } from '../lib/supabase';
 
 type AuthErrorMessage = Pick<AuthError, 'message'>;
 
+export type UserProfile = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+};
+
+const parseProfile = (value: unknown): UserProfile | null => {
+  if (typeof value !== 'object' || value === null) return null;
+
+  const profile = value as Record<string, unknown>;
+  if (
+    typeof profile.id !== 'string'
+    || typeof profile.full_name !== 'string'
+    || (profile.phone !== null && typeof profile.phone !== 'string')
+    || (profile.email !== null && typeof profile.email !== 'string')
+  ) {
+    return null;
+  }
+
+  return {
+    id: profile.id,
+    full_name: profile.full_name,
+    phone: profile.phone,
+    email: profile.email,
+  };
+};
+
 const ensureProfileExists = async (user: User): Promise<AuthErrorMessage | null> => {
   const { data: profile, error: lookupError } = await supabase
     .from('profiles')
@@ -35,6 +63,9 @@ type UserContextType = {
   setDistrict: (d: string) => void;
   session: Session | null;
   authLoading: boolean;
+  profile: UserProfile | null;
+  profileLoading: boolean;
+  profileError: string | null;
   signIn: (email: string, password: string) => Promise<AuthErrorMessage | null>;
   signOut: () => Promise<AuthErrorMessage | null>;
   signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{
@@ -55,6 +86,9 @@ export const UserProvider = ({
   const [district, setDistrict] = useState(initialDistrict);
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -82,6 +116,111 @@ export const UserProvider = ({
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId || !supabaseConfigured) {
+      setProfile(null);
+      setProfileLoading(false);
+      setProfileError(null);
+      return;
+    }
+
+    let active = true;
+    let revision = 0;
+    setProfile(null);
+    setProfileLoading(true);
+    setProfileError(null);
+
+    const loadProfile = async () => {
+      const requestRevision = revision;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, phone, email')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (!active || requestRevision !== revision) return;
+
+        if (error) {
+          setProfileError(`Unable to load profile: ${error.message}`);
+          setProfileLoading(false);
+          return;
+        }
+
+        if (data === null) {
+          setProfile(null);
+          setProfileError('Your profile record could not be found.');
+          setProfileLoading(false);
+          return;
+        }
+
+        const nextProfile = parseProfile(data);
+        if (!nextProfile) {
+          setProfileError('The profile data returned by the server is invalid.');
+          setProfileLoading(false);
+          return;
+        }
+
+        setProfile(nextProfile);
+        setProfileError(null);
+        setProfileLoading(false);
+      } catch (error) {
+        if (!active || requestRevision !== revision) return;
+
+        const details = error instanceof Error ? error.message : 'Unexpected network error';
+        setProfileError(`Unable to load profile: ${details}`);
+        setProfileLoading(false);
+      }
+    };
+
+    const channel = supabase
+      .channel(`profile:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
+        },
+        (payload) => {
+          revision += 1;
+
+          if (payload.eventType === 'DELETE') {
+            setProfile(null);
+            setProfileError('Your profile record was deleted.');
+            setProfileLoading(false);
+            return;
+          }
+
+          const nextProfile = parseProfile(payload.new);
+          if (!nextProfile) {
+            setProfileError('The profile update received from the server is invalid.');
+            setProfileLoading(false);
+            return;
+          }
+
+          setProfile(nextProfile);
+          setProfileError(null);
+          setProfileLoading(false);
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void loadProfile();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setProfileError('Live profile updates are unavailable. Check your connection and Supabase Realtime settings.');
+          setProfileLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [session?.user.id]);
 
   const signIn = async (email: string, password: string) => {
     if (!supabaseConfigured) {
@@ -128,7 +267,18 @@ export const UserProvider = ({
   };
 
   return (
-    <UserContext.Provider value={{ district, setDistrict, session, authLoading, signIn, signOut, signUp }}>
+    <UserContext.Provider value={{
+      district,
+      setDistrict,
+      session,
+      authLoading,
+      profile,
+      profileLoading,
+      profileError,
+      signIn,
+      signOut,
+      signUp,
+    }}>
       {children}
     </UserContext.Provider>
   );
