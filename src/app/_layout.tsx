@@ -19,7 +19,6 @@ function AppEntry() {
   }, []);
 
   const showSplash = !splashElapsed || authLoading;
-  const isSignedIn = !showSplash && Boolean(session);
   const content = showSplash ? (
     <SplashScreen />
   ) : !session ? (
@@ -41,11 +40,11 @@ function AppEntry() {
       edges={['top']}
       style={{
         flex: 1,
-        backgroundColor: isSignedIn ? Colors.light.background : Colors.light.text,
+        backgroundColor: Colors.light.text,
       }}
     >
       <ThemeProvider>
-        <StatusBar style={isSignedIn ? 'dark' : 'light'} animated />
+        <StatusBar style="light" animated />
         {content}
       </ThemeProvider>
     </SafeAreaView>
