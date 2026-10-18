@@ -30,10 +30,6 @@ export default function TabsLayout() {
         options={{ title: 'Home', tabBarIcon: ({ color }) => <MaterialIcons name="home" color={color} size={22} /> }}
       />
       <Tabs.Screen
-        name="jobs"
-        options={{ title: 'Details', tabBarIcon: ({ color }) => <MaterialIcons name="work" color={color} size={22} /> }}
-      />
-      <Tabs.Screen
         name="report"
         options={{ title: 'Report', tabBarIcon: ({ color }) => <MaterialIcons name="report" color={color} size={22} /> }}
       />

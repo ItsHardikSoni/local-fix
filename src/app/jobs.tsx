@@ -8,9 +8,9 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { technicians } from '../../data/technicians';
-import { Colors } from '../../constants/theme';
-import ThemedAlert from '../../components/ui/themed-alert';
+import { technicians } from '../data/technicians';
+import { Colors } from '../constants/theme';
+import ThemedAlert from '../components/ui/themed-alert';
 
 export default function Job() {
   const router = useRouter();
