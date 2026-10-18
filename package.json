@@ -36,10 +36,12 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "concurrently": "^9.2.5",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
+    "dev:local": "concurrently --kill-others -n API,EXPO \"npm:api:dev\" \"npm:start -- --clear\"",
     "api:start": "node api/index.mjs",
     "api:dev": "node --watch api/index.mjs",
     "test:api": "node --test test/otp.test.mjs",

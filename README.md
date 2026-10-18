@@ -31,30 +31,24 @@ Run [`supabase/profiles.sql`](supabase/profiles.sql) in the Supabase SQL editor 
 
 Email/password sign-in uses Supabase Auth. New accounts are created on the OTP API only after the user verifies a six-digit code sent through Nodemailer; Supabase Auth marks that email verified when creating the account. Profile email changes also require a code sent to the new address before the server updates Supabase Auth. AsyncStorage persists the Supabase session so returning users can go straight to Home. The app only sends a password to the OTP API during sign-up; use HTTPS outside local development. Never put SMTP credentials or a Supabase `service_role` key in the Expo app.
 
-### OTP API setup
+### Local OTP email setup
+
+You do not need Railway or another hosting service for local development. Nodemailer runs in the Node API in this same repository. The API and Expo app are separate local processes, started together with one command:
 
 1. In the Supabase SQL editor, run [`supabase/migrations/001_email_otp_challenges.sql`](supabase/migrations/001_email_otp_challenges.sql).
-2. Fill in the root `.env`. Set both `EXPO_PUBLIC_SUPABASE_URL` and server-only `SUPABASE_URL` to the Supabase project base URL (without `/rest/v1/`). The `EXPO_PUBLIC_` values are bundled into the mobile app; SMTP credentials and the Supabase service-role key are read only by the Node API and must never use that prefix. `.env` is ignored by Git.
-3. For local development only, install and run the Node API from the repository root:
+2. In the root `.env`, set `EXPO_PUBLIC_SUPABASE_URL` and server-only `SUPABASE_URL` to your Supabase project base URL (for example, `https://<project-ref>.supabase.co`, without `/rest/v1/`), and set a valid `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
+3. In the same root `.env`, configure the Node API secrets: `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, and a random `OTP_HASH_SECRET` of at least 32 characters. Use valid SMTP credentials (for Gmail, an app password with 2-Step Verification enabled). Never put these secrets in `EXPO_PUBLIC_` variables or access them from app code. The root `.env` is ignored by Git.
+4. Run this project on the same Mac that runs the iOS Simulator, then start both services:
 
    ```sh
    npm install
-   npm run api:dev
+   npm run dev:local
    ```
 
-4. Deploy the API to Railway:
-   - Create a Railway project from this repository and deploy the repository root. [`railway.json`](railway.json) starts the API and configures its `/health` health check.
-   - In the Railway API service Variables, set `SUPABASE_URL` to the Supabase project base URL (without `/rest/v1/`), plus `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, and `OTP_HASH_SECRET`. Never use the `EXPO_PUBLIC_` prefix for these server secrets. Railway provides `PORT`.
-   - Generate a public Railway domain for the API service in its Networking settings.
-   - Set `EXPO_PUBLIC_API_URL` in the app's root `.env` to that public `https://` URL (no trailing slash). Check `<EXPO_PUBLIC_API_URL>/health` returns `{"status":"ok"}`.
-   - Keep `CORS_ORIGINS` unset for native iOS/Android apps; they do not use browser CORS. Configure it only if you later enable the Expo web app, using the exact web origin.
-   - Restart Expo after changing `.env`:
+   In local development, the app uses `http://localhost:4000` automatically if `EXPO_PUBLIC_API_URL` is unset. Check `http://localhost:4000/health` returns `{"status":"ok"}`. Keep the combined command running while testing.
+5. Leave `CORS_ORIGINS` unset for native iOS/Android. CORS is only relevant to browser-based Expo web.
 
-   ```sh
-   npx expo start --clear
-   ```
-
-The Expo app and Node API are maintained in this one project and share its root package manifest. They run as separate processes: the app runs with `npx expo start`, while Railway runs the deployed API. The server-only secrets are not bundled into the mobile app.
+If this repository and API run in a remote Codespace while the iOS Simulator is on your Mac, the simulator's `localhost` is your Mac and cannot reach the Codespace API. To avoid hosting the API externally, run the repository and both local processes on the Mac instead. An app release also needs a reachable HTTPS API endpoint; a local-only API supports local development and testing.
 
 The API limits code requests to five per email and purpose per 24 hours, applies a one-minute resend delay, expires codes after 10 minutes, and allows at most five verification attempts per code. Run `npm run test:api` for the OTP utility tests. Profile name and phone edits are synchronized to Supabase Auth metadata and `public.profiles`.
 

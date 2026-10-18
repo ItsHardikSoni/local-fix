@@ -1,4 +1,5 @@
-const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '');
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '');
+const API_URL = configuredApiUrl || (__DEV__ ? 'http://localhost:4000' : undefined);
 
 export const otpApiConfigured = Boolean(API_URL);
 
