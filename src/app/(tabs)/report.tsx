@@ -18,6 +18,7 @@ import { useCustomerAddress } from '../../context/CustomerAddressContext';
 import { useServiceCategories } from '../../context/ServiceCategoryContext';
 import { getServiceCategoryIcon } from '../../constants/service-category-visuals';
 import StateDistrictPicker from '../../components/state-district-picker';
+import { sanitizeMultiline, sanitizeText } from '../../lib/sanitize';
 
 export default function Report() {
   const router = useRouter();
@@ -117,11 +118,11 @@ export default function Report() {
           categoryId: categories.find((category) => category.name === selectedCategory)?.id ?? '',
           districtId,
           districtName: districts.find((item) => item.id === districtId)?.district_name ?? '',
-          stateName,
-          desc: desc.trim(),
-          addressLine: addressLine.trim(),
-          societyName: societyName.trim(),
-          flatNumber: flatNumber.trim(),
+          stateName: sanitizeText(stateName, 80),
+          desc: sanitizeMultiline(desc, 400),
+          addressLine: sanitizeText(addressLine, 500),
+          societyName: sanitizeText(societyName, 160),
+          flatNumber: sanitizeText(flatNumber, 80),
           latitude: latitude === null ? '' : String(latitude),
           longitude: longitude === null ? '' : String(longitude),
         },
