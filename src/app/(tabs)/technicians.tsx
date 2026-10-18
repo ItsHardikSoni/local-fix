@@ -220,12 +220,12 @@ export default function Technicians() {
               <MaterialIcons name={favoritesOnly ? 'favorite-border' : 'search-off'} size={28} color={Colors.light.textSecondary} />
             </View>
             <Text style={styles.emptyTitle}>
-              {!district ? 'Location needed' : 'No matches just yet'}
+              {!district ? 'Location needed' : 'No technicians available yet'}
             </Text>
             <Text style={styles.emptyText}>
               {!district
                 ? 'Allow location access to find professionals in your area.'
-                : 'Try another search or service filter to see available professionals.'}
+                : 'There are no technicians listed in your area yet. Please check back later.'}
             </Text>
             {!district ? (
               <Pressable
@@ -236,19 +236,7 @@ export default function Technicians() {
               >
                 <Text style={styles.resetText}>{locationLoading ? 'Finding location…' : 'Try again'}</Text>
               </Pressable>
-            ) : (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setSearch('');
-                  setSpecialty('All');
-                  setFavoritesOnly(false);
-                }}
-                style={styles.resetButton}
-              >
-                <Text style={styles.resetText}>Clear filters</Text>
-              </Pressable>
-            )}
+            ) : null}
           </View>
         ) : null}
       </ScrollView>
