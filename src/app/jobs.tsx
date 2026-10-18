@@ -11,6 +11,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useWorkerDirectory } from '../context/WorkerDirectoryContext';
 import { Colors } from '../constants/theme';
 import ThemedAlert from '../components/ui/themed-alert';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function Job() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function Job() {
   const worker = workers.find((item) => item.id === workerId);
   const issueType = typeof type === 'string' && type ? type : worker?.services[0]?.name;
   const description = typeof desc === 'string' ? desc : '';
+  const insets = useSafeAreaInsets();
   const latitudeValue = typeof latitude === 'string' ? Number(latitude) : NaN;
   const longitudeValue = typeof longitude === 'string' ? Number(longitude) : NaN;
   const hasServiceLocation = typeof latitude === 'string' && latitude.trim() !== ''
@@ -76,7 +78,13 @@ export default function Job() {
 
   return (
     <View style={styles.page}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: Math.max(24, insets.bottom) },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.hero}>
           <View style={styles.heroTop}>
             <Pressable
@@ -172,21 +180,31 @@ export default function Job() {
           </View>
         </View>
 
-        <View style={styles.priceCard}>
-          <View>
-            <Text style={styles.priceLabel}>Technician rate</Text>
-            <Text style={styles.priceCaption}>Final cost depends on the work required</Text>
-          </View>
-          <View style={styles.rateValues}>
-            {worker.hourlyRate !== null ? (
-              <Text style={styles.price}>₹{worker.hourlyRate}<Text style={styles.perHour}>/hour</Text></Text>
-            ) : null}
-            {worker.dailyRate !== null ? (
-              <Text style={styles.price}>₹{worker.dailyRate}<Text style={styles.perHour}>/day</Text></Text>
-            ) : null}
-            {worker.ratesNegotiable ? <Text style={styles.negotiable}>Rates are negotiable</Text> : null}
-          </View>
+              <View style={styles.priceCard}>
+        <View>
+          <Text style={styles.priceLabel}>Technician rate</Text>
+          <Text style={styles.priceCaption}>Final cost depends on the work required</Text>
         </View>
+
+        <View style={styles.rateValues}>
+          {worker?.hourlyRate !== null && (
+            <Text style={styles.price}>
+              ₹{worker.hourlyRate}
+              <Text style={styles.perHour}>/hour</Text>
+            </Text>
+          )}
+          {worker?.dailyRate !== null && (
+            <Text style={styles.price}>
+              ₹{worker.dailyRate}
+              <Text style={styles.perHour}>/day</Text>
+            </Text>
+          )}
+          {worker?.ratesNegotiable && (
+            <Text style={styles.negotiable}>Rates are negotiable</Text>
+          )}
+        </View>
+      </View>
+
 
         <View style={styles.notice}>
           <MaterialIcons name="info-outline" size={19} color={Colors.light.backgroundSelected} />
@@ -194,7 +212,7 @@ export default function Job() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
         <Pressable
           accessibilityRole="button"
           onPress={() => setShowPaymentAlert(true)}
@@ -244,11 +262,11 @@ const styles = StyleSheet.create({
   detailValue: { marginTop: 4, color: Colors.light.text, fontSize: 14, fontWeight: '600' },
   description: { marginTop: 5, color: Colors.light.text, fontSize: 14, lineHeight: 21 },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E8EDF2' },
-  priceCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 15, padding: 16, borderWidth: 1, borderColor: '#F2E2C5', borderRadius: 15, backgroundColor: '#FFF9EE' },
+  priceCard: { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 15, padding: 16, borderWidth: 1, borderColor: '#F2E2C5', borderRadius: 15, backgroundColor: '#FFF9EE' },
   priceLabel: { color: Colors.light.text, fontSize: 14, fontWeight: '700' },
   priceCaption: { maxWidth: 200, marginTop: 4, color: Colors.light.textSecondary, fontSize: 11, lineHeight: 16 },
   price: { color: Colors.light.text, fontSize: 20, fontWeight: '800' },
-  rateValues: { alignItems: 'flex-end', gap: 3 },
+  rateValues: { alignItems: 'flex-end', gap: 4, marginTop: 8 },
   negotiable: { color: Colors.light.backgroundSelected, fontSize: 11, fontWeight: '700' },
   perHour: { fontSize: 12, fontWeight: '500' },
   notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginHorizontal: 20, marginTop: 15, padding: 13, borderRadius: 12, backgroundColor: '#EFF3F8' },

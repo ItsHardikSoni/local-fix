@@ -3,7 +3,6 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ThemeProvider from '../components/ThemeProvider';
-import AuthScreen from '../components/auth-screen';
 import LoadingScreen from '../components/loading-screen';
 import SplashScreen from '../components/splash-screen';
 import { UserProvider, useUser } from '../context/UserContext';
@@ -18,6 +17,7 @@ function AppEntry() {
   const [showSplash, setShowSplash] = useState(true);
   const previousUserId = useRef<string | null>(null);
   const initialAuthResolved = useRef(false);
+  const isSignedIn = Boolean(session);
 
   useEffect(() => {
     if (authLoading) return;
@@ -46,8 +46,6 @@ function AppEntry() {
     <SplashScreen />
   ) : authLoading ? (
     <LoadingScreen />
-  ) : !session ? (
-    <AuthScreen />
   ) : (
     <Stack
       screenOptions={{
@@ -56,8 +54,14 @@ function AppEntry() {
         headerTitleStyle: { fontFamily: 'Inter', fontWeight: '600' },
       }}
     >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="help" options={{ title: 'Help & information',headerShown: false }} />
+      <Stack.Protected guard={isSignedIn}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="help" options={{ title: 'Help & information', headerShown: false }} />
+        <Stack.Screen name="jobs" options={{ title: 'Review request', headerShown: false }} />
+      </Stack.Protected>
+      <Stack.Protected guard={!isSignedIn}>
+        <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+      </Stack.Protected>
     </Stack>
   );
 

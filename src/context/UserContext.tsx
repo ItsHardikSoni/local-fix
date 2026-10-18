@@ -1,5 +1,8 @@
 import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
 import type { AuthError, Session, User } from '@supabase/supabase-js';
+import { toPublicErrorMessage } from '../lib/public-error';
+import { consumeRateLimit } from '../lib/rate-limit';
+import { sanitizeEmail, sanitizePhoneDigits, sanitizeText } from '../lib/sanitize';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 
 type AuthErrorMessage = Pick<AuthError, 'message'>;
@@ -47,9 +50,9 @@ const ensureProfileExists = async (user: User): Promise<AuthErrorMessage | null>
   if (profile) return null;
 
   const metadata = user.user_metadata ?? {};
-  const fullName = typeof metadata.full_name === 'string' ? metadata.full_name : '';
-  const phone = typeof metadata.phone === 'string' && metadata.phone.trim()
-    ? metadata.phone
+  const fullName = typeof metadata.full_name === 'string' ? sanitizeText(metadata.full_name, 80) : '';
+  const phone = typeof metadata.phone === 'string'
+    ? sanitizePhoneDigits(metadata.phone) || null
     : null;
 
   const { error: insertError } = await supabase.from('profiles').insert({
@@ -225,8 +228,16 @@ export const UserProvider = ({ children }: {
       return { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' };
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return error;
+    const limit = consumeRateLimit('auth-sign-in', 5, 60_000);
+    if (!limit.ok) {
+      return { message: `Too many sign-in attempts. Try again in ${limit.retryAfterSec} seconds.` };
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: sanitizeEmail(email),
+      password,
+    });
+    if (error) return { message: toPublicErrorMessage(error, 'Unable to sign in. Check your email and password.') };
 
     return ensureProfileExists(data.user);
   };
@@ -252,16 +263,26 @@ export const UserProvider = ({ children }: {
       };
     }
 
-    const normalizedEmail = email.trim();
-    const emailChanged = normalizedEmail.toLowerCase() !== currentUser.email?.toLowerCase();
+    const normalizedName = sanitizeText(fullName, 80);
+    const normalizedEmail = sanitizeEmail(email);
+    const normalizedPhone = sanitizePhoneDigits(phone);
+    if (!normalizedName || !normalizedEmail) {
+      return { error: { message: 'Enter a valid name and email address.' }, emailConfirmationRequired: false };
+    }
+    const emailChanged = normalizedEmail !== currentUser.email?.toLowerCase();
     const { data, error } = await supabase.auth.updateUser({
       ...(emailChanged ? { email: normalizedEmail } : {}),
       data: {
-        full_name: fullName.trim(),
-        phone: phone.trim() || null,
+        full_name: normalizedName,
+        phone: normalizedPhone || null,
       },
     });
-    if (error) return { error, emailConfirmationRequired: false };
+    if (error) {
+      return {
+        error: { message: toPublicErrorMessage(error, 'Unable to update your account.') },
+        emailConfirmationRequired: false,
+      };
+    }
     if (!data.user) {
       return {
         error: { message: 'Supabase did not return the updated account.' },
@@ -273,8 +294,8 @@ export const UserProvider = ({ children }: {
       .from('profiles')
       .upsert({
         id: currentUser.id,
-        full_name: fullName.trim(),
-        phone: phone.trim() || null,
+        full_name: normalizedName,
+        phone: normalizedPhone || null,
         email: data.user.email ?? currentUser.email ?? null,
       }, { onConflict: 'id' })
       .select('id, full_name, phone, email')
@@ -282,7 +303,10 @@ export const UserProvider = ({ children }: {
     if (profileError) {
       return {
         error: {
-          message: `Your account was updated, but your profile could not be synchronized: ${profileError.message}`,
+          message: toPublicErrorMessage(
+            profileError,
+            'Your account was updated, but your profile could not be synchronized.',
+          ),
         },
         emailConfirmationRequired: false,
       };
@@ -318,17 +342,30 @@ export const UserProvider = ({ children }: {
       };
     }
 
+    const limit = consumeRateLimit('auth-sign-up', 5, 60_000);
+    if (!limit.ok) {
+      return {
+        error: { message: `Too many sign-up attempts. Try again in ${limit.retryAfterSec} seconds.` },
+        confirmationRequired: false,
+      };
+    }
+
     const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
+      email: sanitizeEmail(email),
       password,
       options: {
         data: {
-          full_name: fullName.trim(),
-          phone: phone.trim() || null,
+          full_name: sanitizeText(fullName, 80),
+          phone: sanitizePhoneDigits(phone) || null,
         },
       },
     });
-    if (error) return { error, confirmationRequired: false };
+    if (error) {
+      return {
+        error: { message: toPublicErrorMessage(error, 'Unable to create your account.') },
+        confirmationRequired: false,
+      };
+    }
     if (!data.user) {
       return {
         error: { message: 'Supabase did not return the created account.' },
