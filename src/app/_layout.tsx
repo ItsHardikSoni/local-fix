@@ -9,6 +9,8 @@ import SplashScreen from '../components/splash-screen';
 import { UserProvider, useUser } from '../context/UserContext';
 import { LocationProvider } from '../context/LocationContext';
 import { CustomerAddressProvider } from '../context/CustomerAddressContext';
+import { ServiceCategoryProvider } from '../context/ServiceCategoryContext';
+import { WorkerDirectoryProvider } from '../context/WorkerDirectoryContext';
 import { Colors } from '../constants/theme';
 
 function AppEntry() {
@@ -55,6 +57,7 @@ function AppEntry() {
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="help" options={{ title: 'Help & information' }} />
     </Stack>
   );
 
@@ -79,9 +82,13 @@ export default function Layout() {
     <SafeAreaProvider>
       <UserProvider>
         <LocationProvider>
-          <CustomerAddressProvider>
-            <AppEntry />
-          </CustomerAddressProvider>
+          <ServiceCategoryProvider>
+            <WorkerDirectoryProvider>
+              <CustomerAddressProvider>
+                <AppEntry />
+              </CustomerAddressProvider>
+            </WorkerDirectoryProvider>
+          </ServiceCategoryProvider>
         </LocationProvider>
       </UserProvider>
     </SafeAreaProvider>

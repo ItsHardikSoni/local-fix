@@ -16,15 +16,10 @@ import { Colors } from '../../constants/theme';
 import { useLocation } from '../../context/LocationContext';
 import { useUser } from '../../context/UserContext';
 import { useCustomerAddress } from '../../context/CustomerAddressContext';
+import { useServiceCategories } from '../../context/ServiceCategoryContext';
+import { getServiceCategoryIcon } from '../../constants/service-category-visuals';
 import StateDistrictPicker from '../../components/state-district-picker';
 import { supabaseConfigured } from '../../lib/supabase';
-
-const issueTypes = [
-  { label: 'Water leak', icon: 'water-drop' as const },
-  { label: 'Electrical', icon: 'bolt' as const },
-  { label: 'AC repair', icon: 'ac-unit' as const },
-  { label: 'General repair', icon: 'handyman' as const },
-];
 
 export default function Report() {
   const router = useRouter();
@@ -41,8 +36,14 @@ export default function Report() {
     saveAddress,
     refreshAddressData,
   } = useCustomerAddress();
+  const {
+    categories,
+    loading: categoriesLoading,
+    error: categoriesError,
+    refreshCategories,
+  } = useServiceCategories();
   const { type: initialType } = useLocalSearchParams<{ type?: string }>();
-  const [type, setType] = useState('Water leak');
+  const [type, setType] = useState<string | null>(null);
   const [desc, setDesc] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [addressDraftDirty, setAddressDraftDirty] = useState(false);
@@ -91,13 +92,12 @@ export default function Report() {
     }
   }, [addressDraftDirty, currentDistrict, districtId, districts]);
 
-  useEffect(() => {
-    if (typeof initialType === 'string' && initialType.trim()) {
-      setType(initialType);
-    }
-  }, [initialType]);
-
-  const typeError = attemptedSubmit && !type.trim();
+  const selectedCategory = type && categories.some((item) => item.name === type)
+    ? type
+    : (typeof initialType === 'string'
+      ? categories.find((item) => item.name.toLowerCase() === initialType.trim().toLowerCase())?.name
+      : undefined) ?? categories[0]?.name ?? '';
+  const typeError = attemptedSubmit && !selectedCategory;
   const descriptionError = attemptedSubmit && desc.trim().length < 8;
   const addressLineError = attemptedSubmit && !addressLine.trim();
   const stateError = attemptedSubmit && !stateName;
@@ -105,7 +105,7 @@ export default function Report() {
 
   const onSubmit = async () => {
     setAttemptedSubmit(true);
-    if (!type.trim() || desc.trim().length < 8) return;
+    if (!selectedCategory || desc.trim().length < 8) return;
     if (!addressLine.trim() || !stateName || !districtId) return;
     if (!session?.user.id || !supabaseConfigured) {
       setAddressError('Sign in and configure Supabase before saving your address.');
@@ -132,7 +132,7 @@ export default function Report() {
       router.push({
         pathname: '/technicians',
         params: {
-          type: type.trim(),
+          type: selectedCategory,
           desc: desc.trim(),
           latitude: latitude === null ? '' : String(latitude),
           longitude: longitude === null ? '' : String(longitude),
@@ -175,46 +175,58 @@ export default function Report() {
 
         <View style={styles.form}>
           <Text style={styles.label}>What kind of help do you need?</Text>
-          <View style={styles.typeGrid}>
-            {issueTypes.map((item) => {
-              const selected = type.toLowerCase() === item.label.toLowerCase();
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  key={item.label}
-                  onPress={() => setType(item.label)}
-                  style={({ pressed }) => [
-                    styles.typeChip,
-                    selected && styles.typeChipSelected,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <MaterialIcons
-                    name={item.icon}
-                    size={17}
-                    color={selected ? Colors.light.text : Colors.light.textSecondary}
-                  />
-                  <Text style={[styles.typeChipText, selected && styles.typeChipTextSelected]}>
-                    {item.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={styles.label}>Issue type</Text>
-          <TextInput
-            accessibilityLabel="Issue type"
-            maxLength={60}
-            onChangeText={setType}
-            placeholder="For example, a leaking kitchen tap"
-            placeholderTextColor={Colors.light.textSecondary}
-            returnKeyType="next"
-            style={[styles.input, typeError && styles.inputError]}
-            value={type}
-          />
-          {typeError ? <Text style={styles.errorText}>Please enter an issue type.</Text> : null}
+          {categoriesLoading && categories.length === 0 ? (
+            <View style={styles.categoryStatus}>
+              <ActivityIndicator color={Colors.light.backgroundSelected} />
+              <Text style={styles.addressHelper}>Loading available services…</Text>
+            </View>
+          ) : categoriesError && categories.length === 0 ? (
+            <View style={styles.categoryStatus}>
+              <Text accessibilityRole="alert" style={styles.errorText}>{categoriesError}</Text>
+              <Pressable accessibilityRole="button" onPress={() => { void refreshCategories(); }}>
+                <Text style={styles.addAddressText}>Retry loading services</Text>
+              </Pressable>
+            </View>
+          ) : categories.length === 0 ? (
+            <Text style={styles.errorText}>No services are currently available.</Text>
+          ) : (
+            <View style={styles.typeGrid}>
+              {categories.map((item) => {
+                const selected = selectedCategory === item.name;
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    key={item.id}
+                    onPress={() => setType(item.name)}
+                    style={({ pressed }) => [
+                      styles.typeChip,
+                      selected && styles.typeChipSelected,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <MaterialIcons
+                      name={getServiceCategoryIcon(item.name)}
+                      size={17}
+                      color={selected ? Colors.light.text : Colors.light.textSecondary}
+                    />
+                    <Text style={[styles.typeChipText, selected && styles.typeChipTextSelected]}>
+                      {item.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+          {categoriesError && categories.length > 0 ? (
+            <View style={styles.categoryError}>
+              <Text accessibilityRole="alert" style={styles.errorText}>{categoriesError}</Text>
+              <Pressable accessibilityRole="button" onPress={() => { void refreshCategories(); }}>
+                <Text style={styles.addAddressText}>Refresh services</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {typeError ? <Text style={styles.errorText}>Select an available service.</Text> : null}
 
           <View style={styles.descriptionLabel}>
             <Text style={styles.label}>Describe the problem</Text>
@@ -418,6 +430,8 @@ const styles = StyleSheet.create({
   addressSyncStatus: { marginTop: -3, marginBottom: 8, color: Colors.light.textSecondary, fontSize: 11 },
   addressHelper: { marginBottom: 15, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
   addressLoading: { flexDirection: 'row', alignItems: 'center', gap: 9, marginVertical: 12 },
+  categoryStatus: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 20 },
+  categoryError: { marginTop: -12, marginBottom: 14 },
   label: { marginBottom: 9, color: Colors.light.text, fontSize: 14, fontWeight: '700' },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 22 },
   typeChip: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 20, backgroundColor: Colors.light.backgroundElement },

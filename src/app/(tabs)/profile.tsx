@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
+import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useUser } from '../../context/UserContext';
 import { useLocation } from '../../context/LocationContext';
@@ -19,7 +20,16 @@ import ThemedAlert from '../../components/ui/themed-alert';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_PATTERN = /^\d{10}$/;
 
+const helpItems = [
+  { topic: 'about', title: 'About LocalFix', detail: 'App details and what LocalFix does', icon: 'info-outline' },
+  { topic: 'guide', title: 'How to use the app', detail: 'A quick guide to requesting a service', icon: 'menu-book' },
+  { topic: 'faq', title: 'Frequently asked questions', detail: 'Answers about location, addresses, and requests', icon: 'quiz' },
+  { topic: 'report', title: 'Report an app issue', detail: 'Prepare an issue report in your email app', icon: 'bug-report' },
+  { topic: 'terms', title: 'Terms and conditions', detail: 'Guidelines for using LocalFix', icon: 'description' },
+] as const;
+
 export default function ProfileScreen() {
+  const router = useRouter();
   const {
     session,
     profile,
@@ -522,6 +532,31 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Help & information</Text>
+        </View>
+        <View style={styles.helpCard}>
+          {helpItems.map((item, index) => (
+            <React.Fragment key={item.topic}>
+              {index > 0 ? <View style={styles.divider} /> : null}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push({ pathname: '/help', params: { topic: item.topic } })}
+                style={({ pressed }) => [styles.helpRow, pressed && styles.helpRowPressed]}
+              >
+                <View style={styles.helpIcon}>
+                  <MaterialIcons name={item.icon} size={19} color={Colors.light.backgroundSelected} />
+                </View>
+                <View style={styles.helpCopy}>
+                  <Text style={styles.helpTitle}>{item.title}</Text>
+                  <Text style={styles.helpDetail}>{item.detail}</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={22} color={Colors.light.textSecondary} />
+              </Pressable>
+            </React.Fragment>
+          ))}
+        </View>
+
         <Pressable
           accessibilityRole="button"
           disabled={busy}
@@ -604,6 +639,13 @@ const styles = StyleSheet.create({
   securityCopy: { flex: 1 },
   securityTitle: { color: Colors.light.text, fontSize: 13, fontWeight: '700' },
   securityText: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
+  helpCard: { marginHorizontal: 20, paddingHorizontal: 14, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
+  helpRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12 },
+  helpRowPressed: { opacity: 0.7 },
+  helpIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFF2DE' },
+  helpCopy: { flex: 1 },
+  helpTitle: { color: Colors.light.text, fontSize: 14, fontWeight: '700' },
+  helpDetail: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 11, lineHeight: 16 },
   logout: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 20, marginTop: 24, borderRadius: 12, backgroundColor: Colors.light.text },
   logoutPressed: { opacity: 0.85 },
   logoutDisabled: { opacity: 0.7 },
