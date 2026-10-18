@@ -3,6 +3,10 @@ import type { AuthError, Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 
 type AuthErrorMessage = Pick<AuthError, 'message'>;
+type ProfileUpdateResult = {
+  error: { message: string } | null;
+  emailConfirmationRequired: boolean;
+};
 
 export type UserProfile = {
   id: string;
@@ -68,6 +72,7 @@ type UserContextType = {
   profileError: string | null;
   signIn: (email: string, password: string) => Promise<AuthErrorMessage | null>;
   signOut: () => Promise<AuthErrorMessage | null>;
+  updateProfile: (fullName: string, email: string, phone: string) => Promise<ProfileUpdateResult>;
   signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{
     error: AuthErrorMessage | null;
     confirmationRequired: boolean;
@@ -238,27 +243,107 @@ export const UserProvider = ({
     return error;
   };
 
-  const signUp = async (email: string, password: string, fullName: string, phone: string) => {
+  const updateProfile = async (
+    fullName: string,
+    email: string,
+    phone: string,
+  ): Promise<ProfileUpdateResult> => {
+    const currentUser = session?.user;
+    if (!currentUser) {
+      return { error: { message: 'You must be signed in to update your profile.' }, emailConfirmationRequired: false };
+    }
     if (!supabaseConfigured) {
       return {
-        error: { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' },
+        error: { message: 'Supabase is not configured. Check the Expo .env settings.' },
+        emailConfirmationRequired: false,
+      };
+    }
+
+    const normalizedEmail = email.trim();
+    const emailChanged = normalizedEmail.toLowerCase() !== currentUser.email?.toLowerCase();
+    const { data, error } = await supabase.auth.updateUser({
+      ...(emailChanged ? { email: normalizedEmail } : {}),
+      data: {
+        full_name: fullName.trim(),
+        phone: phone.trim() || null,
+      },
+    });
+    if (error) return { error, emailConfirmationRequired: false };
+    if (!data.user) {
+      return {
+        error: { message: 'Supabase did not return the updated account.' },
+        emailConfirmationRequired: false,
+      };
+    }
+
+    const { data: updatedProfile, error: profileError } = await supabase
+      .from('profiles')
+      .upsert({
+        id: currentUser.id,
+        full_name: fullName.trim(),
+        phone: phone.trim() || null,
+        email: data.user.email ?? currentUser.email ?? null,
+      }, { onConflict: 'id' })
+      .select('id, full_name, phone, email')
+      .single();
+    if (profileError) {
+      return {
+        error: {
+          message: `Your account was updated, but your profile could not be synchronized: ${profileError.message}`,
+        },
+        emailConfirmationRequired: false,
+      };
+    }
+
+    const nextProfile = parseProfile(updatedProfile);
+    if (!nextProfile) {
+      return {
+        error: { message: 'Your account was updated, but Supabase returned invalid profile data.' },
+        emailConfirmationRequired: false,
+      };
+    }
+
+    setProfile(nextProfile);
+    setProfileError(null);
+    return {
+      error: null,
+      emailConfirmationRequired: emailChanged
+        && data.user.email?.toLowerCase() !== normalizedEmail.toLowerCase(),
+    };
+  };
+
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    phone: string,
+  ) => {
+    if (!supabaseConfigured) {
+      return {
+        error: { message: 'Supabase is not configured. Check the Expo .env settings.' },
         confirmationRequired: false,
       };
     }
 
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password,
       options: {
         data: {
-          full_name: fullName,
-          phone: phone || null,
+          full_name: fullName.trim(),
+          phone: phone.trim() || null,
         },
       },
     });
-
     if (error) return { error, confirmationRequired: false };
-    if (data.session && data.user) {
+    if (!data.user) {
+      return {
+        error: { message: 'Supabase did not return the created account.' },
+        confirmationRequired: false,
+      };
+    }
+
+    if (data.session) {
       const profileError = await ensureProfileExists(data.user);
       if (profileError) return { error: profileError, confirmationRequired: false };
     }
@@ -277,6 +362,7 @@ export const UserProvider = ({
       profileError,
       signIn,
       signOut,
+      updateProfile,
       signUp,
     }}>
       {children}

@@ -1,26 +1,48 @@
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ThemeProvider from '../components/ThemeProvider';
 import AuthScreen from '../components/auth-screen';
+import LoadingScreen from '../components/loading-screen';
 import SplashScreen from '../components/splash-screen';
 import { UserProvider, useUser } from '../context/UserContext';
+import { LocationProvider } from '../context/LocationContext';
 import { Colors } from '../constants/theme';
 
 function AppEntry() {
   const { session, authLoading } = useUser();
-  const [splashElapsed, setSplashElapsed] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const previousUserId = useRef<string | null>(null);
+  const initialAuthResolved = useRef(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setSplashElapsed(true), 3000);
-    return () => clearTimeout(timer);
-  }, []);
+    if (authLoading) return;
 
-  const showSplash = !splashElapsed || authLoading;
+    const userId = session?.user.id ?? null;
+    if (!initialAuthResolved.current) {
+      previousUserId.current = userId;
+      initialAuthResolved.current = true;
+      return;
+    }
+
+    if (previousUserId.current !== userId) {
+      previousUserId.current = userId;
+      setShowSplash(true);
+    }
+  }, [authLoading, session?.user.id]);
+
+  useEffect(() => {
+    if (!showSplash) return;
+
+    const timer = setTimeout(() => setShowSplash(false), 3000);
+    return () => clearTimeout(timer);
+  }, [showSplash]);
+
   const content = showSplash ? (
     <SplashScreen />
+  ) : authLoading ? (
+    <LoadingScreen />
   ) : !session ? (
     <AuthScreen />
   ) : (
@@ -55,7 +77,9 @@ export default function Layout() {
   return (
     <SafeAreaProvider>
       <UserProvider district="Muzaffarpur">
-        <AppEntry />
+        <LocationProvider>
+          <AppEntry />
+        </LocationProvider>
       </UserProvider>
     </SafeAreaProvider>
   );

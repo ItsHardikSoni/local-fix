@@ -27,6 +27,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow LocalFix to include your location with service requests."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#0C1B33",

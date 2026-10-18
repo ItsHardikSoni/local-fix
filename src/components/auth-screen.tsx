@@ -113,7 +113,10 @@ export default function AuthScreen() {
           setMessage(result.error.message);
           setIsError(true);
         } else if (result.confirmationRequired) {
-          setMessage('Check your email to confirm your account, then sign in.');
+          setMode('signIn');
+          setMessage('Your account was created. Check your email for the confirmation link, then sign in.');
+        } else {
+          setMessage('Your account was created successfully.');
         }
       }
     } catch {
@@ -174,12 +177,14 @@ export default function AuthScreen() {
               Add your Supabase URL and publishable key to the root .env file to enable sign in.
             </Text>
           ) : null}
-
           <View style={styles.switcher}>
             <Pressable
               accessibilityRole="tab"
               accessibilityState={{ selected: !isSignUp }}
-              onPress={() => { setMode('signIn'); setMessage(''); }}
+              onPress={() => {
+                setMode('signIn');
+                setMessage('');
+              }}
               style={[styles.switchOption, !isSignUp && styles.switchOptionSelected]}
             >
               <Text style={[styles.switchText, !isSignUp && styles.switchTextSelected]}>Sign in</Text>
@@ -187,7 +192,10 @@ export default function AuthScreen() {
             <Pressable
               accessibilityRole="tab"
               accessibilityState={{ selected: isSignUp }}
-              onPress={() => { setMode('signUp'); setMessage(''); }}
+              onPress={() => {
+                setMode('signUp');
+                setMessage('');
+              }}
               style={[styles.switchOption, isSignUp && styles.switchOptionSelected]}
             >
               <Text style={[styles.switchText, isSignUp && styles.switchTextSelected]}>Sign up</Text>
@@ -299,7 +307,11 @@ export default function AuthScreen() {
             style={({ pressed }) => [styles.submit, pressed && styles.submitPressed, (busy || !canSubmit) && styles.submitDisabled]}
           >
             {busy ? <ActivityIndicator color={Colors.light.text} /> : (
-              <Text style={styles.submitText}>{isSignUp ? 'Create account' : 'Sign in'}</Text>
+              <Text style={styles.submitText}>
+                {isSignUp
+                  ? 'Create account'
+                  : 'Sign in'}
+              </Text>
             )}
           </Pressable>
         </SafeAreaView>

@@ -14,15 +14,26 @@ import ThemedAlert from '../../components/ui/themed-alert';
 
 export default function Job() {
   const router = useRouter();
-  const { techId, type, desc } = useLocalSearchParams<{
+  const { techId, type, desc, latitude, longitude } = useLocalSearchParams<{
     techId?: string;
     type?: string;
     desc?: string;
+    latitude?: string;
+    longitude?: string;
   }>();
   const [showPaymentAlert, setShowPaymentAlert] = useState(false);
   const tech = technicians.find((technician) => technician.id === Number(techId));
   const issueType = typeof type === 'string' && type ? type : tech?.specialty;
   const description = typeof desc === 'string' ? desc : '';
+  const latitudeValue = typeof latitude === 'string' ? Number(latitude) : NaN;
+  const longitudeValue = typeof longitude === 'string' ? Number(longitude) : NaN;
+  const hasServiceLocation = typeof latitude === 'string' && latitude.trim() !== ''
+    && typeof longitude === 'string' && longitude.trim() !== '';
+  const serviceLocation = hasServiceLocation
+    && Number.isFinite(latitudeValue) && latitudeValue >= -90 && latitudeValue <= 90
+    && Number.isFinite(longitudeValue) && longitudeValue >= -180 && longitudeValue <= 180
+    ? `${latitude}, ${longitude}`
+    : null;
 
   if (!tech) {
     const hasInvalidTechId = Boolean(techId);
@@ -121,8 +132,8 @@ export default function Job() {
               <MaterialIcons name="location-on" size={19} color={Colors.light.backgroundSelected} />
             </View>
             <View style={styles.detailCopy}>
-              <Text style={styles.detailLabel}>Service area</Text>
-              <Text style={styles.detailValue}>{tech.district}</Text>
+              <Text style={styles.detailLabel}>{serviceLocation ? 'Your GPS location' : 'Service area'}</Text>
+              <Text style={styles.detailValue}>{serviceLocation || tech.district}</Text>
             </View>
           </View>
         </View>

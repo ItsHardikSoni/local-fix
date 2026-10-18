@@ -18,9 +18,11 @@ const specialties = ['All', 'Plumber', 'Electrician', 'AC Technician'];
 export default function Technicians() {
   const router = useRouter();
   const { district } = useUser();
-  const { type: issueType, desc: issueDescription } = useLocalSearchParams<{
+  const { type: issueType, desc: issueDescription, latitude, longitude } = useLocalSearchParams<{
     type?: string;
     desc?: string;
+    latitude?: string;
+    longitude?: string;
   }>();
   const [search, setSearch] = useState('');
   const [specialty, setSpecialty] = useState('All');
@@ -45,6 +47,8 @@ export default function Technicians() {
         techId: String(tech.id),
         type: typeof issueType === 'string' && issueType ? issueType : tech.specialty,
         desc: typeof issueDescription === 'string' ? issueDescription : '',
+        latitude: typeof latitude === 'string' ? latitude : '',
+        longitude: typeof longitude === 'string' ? longitude : '',
       },
     });
   };
