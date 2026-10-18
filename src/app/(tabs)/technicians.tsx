@@ -27,8 +27,21 @@ export default function Technicians() {
     refreshWorkers,
   } = useWorkerDirectory();
   const { categories } = useServiceCategories();
-  const { type: issueType, desc: issueDescription, latitude, longitude } = useLocalSearchParams<{
+  const {
+    type: issueType,
+    categoryId: requestedCategoryId,
+    districtId: requestedDistrictId,
+    districtName: requestedDistrictName,
+    stateName: requestedStateName,
+    desc: issueDescription,
+    latitude,
+    longitude,
+  } = useLocalSearchParams<{
     type?: string;
+    categoryId?: string;
+    districtId?: string;
+    districtName?: string;
+    stateName?: string;
     desc?: string;
     latitude?: string;
     longitude?: string;
@@ -44,26 +57,64 @@ export default function Technicians() {
     'All',
     ...categories.map((category) => category.name),
   ], [categories]);
-  const activeSpecialty = specialties.includes(specialty) ? specialty : 'All';
+  const activeSpecialty = specialties.includes(specialty)
+    || (Boolean(issueType) && specialty === issueType)
+    ? specialty
+    : 'All';
+  const activeCategoryId = activeSpecialty === 'All'
+    ? (specialty === issueType && typeof requestedCategoryId === 'string' ? requestedCategoryId : '')
+    : categories.find((category) => category.name === activeSpecialty)?.id
+      ?? (activeSpecialty === issueType && typeof requestedCategoryId === 'string'
+        ? requestedCategoryId
+        : '');
+  const selectedServiceName = activeSpecialty !== 'All'
+    ? activeSpecialty
+    : typeof issueType === 'string' ? issueType : '';
+  const targetDistrictName = typeof requestedDistrictName === 'string' && requestedDistrictName
+    ? requestedDistrictName
+    : district;
 
   const filteredWorkers = useMemo(() => {
     const query = search.trim().toLowerCase();
     return workers
-      .filter((worker) => district !== null && worker.district.toLowerCase() === district.toLowerCase())
-      .filter((worker) => activeSpecialty === 'All' || worker.services.some((service) => service.name === activeSpecialty))
+      .filter((worker) => {
+        if (typeof requestedDistrictId === 'string' && requestedDistrictId) {
+          return worker.districtId === requestedDistrictId
+            && (typeof requestedStateName !== 'string'
+              || !requestedStateName
+              || worker.state.toLowerCase() === requestedStateName.toLowerCase());
+        }
+        return targetDistrictName !== null
+          && worker.district.toLowerCase() === targetDistrictName.toLowerCase();
+      })
+      .filter((worker) => !activeCategoryId || worker.services.some((service) => service.id === activeCategoryId))
       .filter((worker) => !favoritesOnly || favoriteIds.includes(worker.id))
       .filter((worker) => !query || `${worker.name} ${worker.services.map((service) => service.name).join(' ')}`.toLowerCase().includes(query))
       .sort((left, right) => topRatedFirst
         ? right.averageRating - left.averageRating
         : left.name.localeCompare(right.name));
-  }, [activeSpecialty, district, favoriteIds, favoritesOnly, search, topRatedFirst, workers]);
+  }, [
+    activeCategoryId,
+    favoriteIds,
+    favoritesOnly,
+    requestedDistrictId,
+    requestedStateName,
+    search,
+    targetDistrictName,
+    topRatedFirst,
+    workers,
+  ]);
 
   const select = (workerId: string) => {
     router.push({
       pathname: '/jobs',
       params: {
         workerId,
-        type: typeof issueType === 'string' && issueType ? issueType : activeSpecialty,
+        type: selectedServiceName,
+        categoryId: activeCategoryId,
+        districtId: typeof requestedDistrictId === 'string' ? requestedDistrictId : '',
+        districtName: targetDistrictName ?? '',
+        stateName: typeof requestedStateName === 'string' ? requestedStateName : '',
         desc: typeof issueDescription === 'string' ? issueDescription : '',
         latitude: typeof latitude === 'string' ? latitude : '',
         longitude: typeof longitude === 'string' ? longitude : '',
@@ -130,6 +181,17 @@ export default function Technicians() {
           <View style={styles.requestBanner}>
             <MaterialIcons name="assignment" size={18} color={Colors.light.backgroundSelected} />
             <Text style={styles.requestText}>Finding help for: <Text style={styles.requestStrong}>{issueType}</Text></Text>
+          </View>
+        ) : null}
+        {targetDistrictName ? (
+          <View style={styles.requestBanner}>
+            <MaterialIcons name="place" size={18} color={Colors.light.backgroundSelected} />
+            <Text style={styles.requestText}>
+              Showing workers in{' '}
+              <Text style={styles.requestStrong}>
+                {[requestedDistrictName || targetDistrictName, requestedStateName].filter(Boolean).join(', ')}
+              </Text>
+            </Text>
           </View>
         ) : null}
 
@@ -297,14 +359,14 @@ export default function Technicians() {
               <MaterialIcons name={favoritesOnly ? 'favorite-border' : 'search-off'} size={28} color={Colors.light.textSecondary} />
             </View>
             <Text style={styles.emptyTitle}>
-              {!district ? 'Location needed' : 'No technicians available yet'}
+              {!targetDistrictName ? 'Location needed' : 'No matching workers yet'}
             </Text>
             <Text style={styles.emptyText}>
-              {!district
+              {!targetDistrictName
                 ? 'Allow location access to find professionals in your area.'
-                : 'There are no technicians listed in your area yet. Please check back later.'}
+                : `There are no verified workers for ${activeSpecialty === 'All' ? 'this service' : activeSpecialty} in ${[requestedDistrictName || targetDistrictName, requestedStateName].filter(Boolean).join(', ')} yet.`}
             </Text>
-            {!district ? (
+            {!targetDistrictName ? (
               <Pressable
                 accessibilityRole="button"
                 disabled={locationLoading}

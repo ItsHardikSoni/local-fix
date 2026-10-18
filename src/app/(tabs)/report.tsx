@@ -14,17 +14,14 @@ import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useLocation } from '../../context/LocationContext';
-import { useUser } from '../../context/UserContext';
 import { useCustomerAddress } from '../../context/CustomerAddressContext';
 import { useServiceCategories } from '../../context/ServiceCategoryContext';
 import { getServiceCategoryIcon } from '../../constants/service-category-visuals';
 import StateDistrictPicker from '../../components/state-district-picker';
-import { supabaseConfigured } from '../../lib/supabase';
 
 export default function Report() {
   const router = useRouter();
   const { location, district: currentDistrict, locationLoading, locationError, refreshLocation } = useLocation();
-  const { session } = useUser();
   const {
     address,
     states,
@@ -33,7 +30,6 @@ export default function Report() {
     addressError: addressSyncError,
     realtimeConnected,
     realtimeError,
-    saveAddress,
     refreshAddressData,
   } = useCustomerAddress();
   const {
@@ -47,7 +43,7 @@ export default function Report() {
   const [desc, setDesc] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [addressDraftDirty, setAddressDraftDirty] = useState(false);
-  const [addressTargetId, setAddressTargetId] = useState<string | null>(null);
+  const [usingAlternateAddress, setUsingAlternateAddress] = useState(false);
   const [addressLine, setAddressLine] = useState('');
   const [societyName, setSocietyName] = useState('');
   const [flatNumber, setFlatNumber] = useState('');
@@ -63,7 +59,7 @@ export default function Report() {
   useEffect(() => {
     if (addressDraftDirty) return;
     if (address) {
-      setAddressTargetId(address.id);
+      setUsingAlternateAddress(false);
       setAddressLine(address.address_line);
       setSocietyName(address.society_name ?? '');
       setFlatNumber(address.flat_number ?? '');
@@ -71,7 +67,7 @@ export default function Report() {
       setStateName(districts.find((item) => item.id === address.district_id)?.state_name ?? '');
       setAddressCoordinates({ latitude: address.latitude, longitude: address.longitude });
     } else {
-      setAddressTargetId(null);
+      setUsingAlternateAddress(false);
       setAddressLine('');
       setSocietyName('');
       setFlatNumber('');
@@ -107,39 +103,31 @@ export default function Report() {
     setAttemptedSubmit(true);
     if (!selectedCategory || desc.trim().length < 8) return;
     if (!addressLine.trim() || !stateName || !districtId) return;
-    if (!session?.user.id || !supabaseConfigured) {
-      setAddressError('Sign in and configure Supabase before saving your address.');
-      return;
-    }
-
     setSaving(true);
     setAddressError('');
     try {
       const currentLocation = await refreshLocation() ?? location;
       const latitude = currentLocation?.coords.latitude ?? addressCoordinates.latitude;
       const longitude = currentLocation?.coords.longitude ?? addressCoordinates.longitude;
-      const savedAddress = await saveAddress(addressTargetId, {
-        district_id: districtId,
-        address_line: addressLine.trim(),
-        society_name: societyName.trim() || null,
-        flat_number: flatNumber.trim() || null,
-        latitude,
-        longitude,
-      });
-      setAddressTargetId(savedAddress.id);
-      setAddressDraftDirty(false);
 
       router.push({
         pathname: '/technicians',
         params: {
           type: selectedCategory,
+          categoryId: categories.find((category) => category.name === selectedCategory)?.id ?? '',
+          districtId,
+          districtName: districts.find((item) => item.id === districtId)?.district_name ?? '',
+          stateName,
           desc: desc.trim(),
+          addressLine: addressLine.trim(),
+          societyName: societyName.trim(),
+          flatNumber: flatNumber.trim(),
           latitude: latitude === null ? '' : String(latitude),
           longitude: longitude === null ? '' : String(longitude),
         },
       });
     } catch (error) {
-      setAddressError(error instanceof Error ? error.message : 'Unable to save your address.');
+      setAddressError(error instanceof Error ? error.message : 'Unable to prepare your service request.');
     } finally {
       setSaving(false);
     }
@@ -251,24 +239,36 @@ export default function Report() {
 
           <View style={styles.addressHeader}>
             <Text style={styles.sectionTitle}>Where should the technician visit?</Text>
-            {addressTargetId ? (
+            {address ? (
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
                   setAddressDraftDirty(true);
-                  setAddressTargetId(null);
-                  setAddressLine('');
-                  setSocietyName('');
-                  setFlatNumber('');
-                  const matchedDistrict = districts.find((item) => (
-                    item.district_name.toLowerCase() === currentDistrict?.toLowerCase()
-                  ));
-                  setStateName(matchedDistrict?.state_name ?? '');
-                  setDistrictId(matchedDistrict?.id ?? '');
-                  setAddressCoordinates({ latitude: null, longitude: null });
+                  if (usingAlternateAddress) {
+                    setUsingAlternateAddress(false);
+                    setAddressLine(address.address_line);
+                    setSocietyName(address.society_name ?? '');
+                    setFlatNumber(address.flat_number ?? '');
+                    setDistrictId(address.district_id);
+                    setStateName(districts.find((item) => item.id === address.district_id)?.state_name ?? '');
+                    setAddressCoordinates({ latitude: address.latitude, longitude: address.longitude });
+                  } else {
+                    setUsingAlternateAddress(true);
+                    setAddressLine('');
+                    setSocietyName('');
+                    setFlatNumber('');
+                    const matchedDistrict = districts.find((item) => (
+                      item.district_name.toLowerCase() === currentDistrict?.toLowerCase()
+                    ));
+                    setStateName(matchedDistrict?.state_name ?? '');
+                    setDistrictId(matchedDistrict?.id ?? '');
+                    setAddressCoordinates({ latitude: null, longitude: null });
+                  }
                 }}
               >
-                <Text style={styles.addAddressText}>Add another</Text>
+                <Text style={styles.addAddressText}>
+                  {usingAlternateAddress ? 'Use profile address' : 'Use another address'}
+                </Text>
               </Pressable>
             ) : null}
           </View>
@@ -280,7 +280,11 @@ export default function Report() {
                 : 'Connecting to live address updates…'}
           </Text>
           <Text style={styles.addressHelper}>
-            {addressTargetId ? 'Your saved address is filled in. You can update it or add another.' : 'Add your service address. Your GPS coordinates are included when available.'}
+            {address
+              ? usingAlternateAddress
+                ? 'This address is for this request only. Your Profile address will not change.'
+                : 'Your Profile address is the default. You can use another address for this request without changing it.'
+              : 'Enter the address for this request. It will not be saved as your Profile address.'}
           </Text>
 
           {addressLoading ? (
@@ -398,7 +402,7 @@ export default function Report() {
           style={({ pressed }) => [styles.submit, pressed && styles.pressed, (locationLoading || addressLoading || saving) && styles.submitDisabled]}
         >
           <Text style={styles.submitText}>
-            {saving ? 'Saving address…' : addressLoading ? 'Loading address…' : locationLoading ? 'Getting location...' : 'Find technicians'}
+            {saving ? 'Preparing request…' : addressLoading ? 'Loading address…' : locationLoading ? 'Getting location...' : 'Find technicians'}
           </Text>
           <MaterialIcons name={saving || locationLoading ? 'my-location' : 'arrow-forward'} size={20} color={Colors.light.text} />
         </Pressable>

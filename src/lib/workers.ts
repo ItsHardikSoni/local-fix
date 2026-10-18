@@ -5,7 +5,9 @@ export type WorkerAvailability = 'available' | 'busy' | 'offline';
 export type WorkerProfile = {
   id: string;
   name: string;
+  districtId: string;
   district: string;
+  state: string;
   experienceYears: number;
   verificationStatus: 'verified';
   availabilityStatus: WorkerAvailability;
@@ -20,6 +22,7 @@ export type WorkerProfile = {
 type WorkerProfileRow = {
   id: string;
   worker_name: string;
+  district_id: string;
   experience_years: number;
   verification_status: 'verified';
   availability_status: WorkerAvailability;
@@ -28,7 +31,7 @@ type WorkerProfileRow = {
   hourly_rate: number | null;
   daily_rate: number | null;
   rates_negotiable: boolean;
-  district: { district_name: string; is_active: boolean } | null;
+  district: { state_name: string; district_name: string; is_active: boolean } | null;
   services: {
     service_category: { id: string; name: string; is_active: boolean } | null;
   }[];
@@ -40,6 +43,7 @@ export async function loadWorkers(): Promise<WorkerProfile[]> {
     .select(`
       id,
       worker_name,
+      district_id,
       experience_years,
       verification_status,
       availability_status,
@@ -48,7 +52,7 @@ export async function loadWorkers(): Promise<WorkerProfile[]> {
       hourly_rate,
       daily_rate,
       rates_negotiable,
-      district:districts!worker_profiles_district_id_fkey(district_name,is_active),
+      district:districts!worker_profiles_district_id_fkey(state_name,district_name,is_active),
       services:worker_service_categories!worker_service_categories_worker_id_fkey(
         service_category:service_categories!worker_service_categories_service_category_id_fkey(id,name,is_active)
       )
@@ -65,7 +69,9 @@ export async function loadWorkers(): Promise<WorkerProfile[]> {
   return data.map((worker) => ({
     id: worker.id,
     name: worker.worker_name,
+    districtId: worker.district_id,
     district: worker.district?.is_active ? worker.district.district_name : '',
+    state: worker.district?.is_active ? worker.district.state_name : '',
     experienceYears: worker.experience_years,
     verificationStatus: worker.verification_status,
     availabilityStatus: worker.availability_status,
