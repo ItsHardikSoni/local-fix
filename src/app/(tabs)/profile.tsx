@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -9,14 +9,27 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
+import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useUser } from '../../context/UserContext';
+import { useLocation } from '../../context/LocationContext';
+import { useCustomerAddress } from '../../context/CustomerAddressContext';
+import StateDistrictPicker from '../../components/state-district-picker';
 import ThemedAlert from '../../components/ui/themed-alert';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_PATTERN = /^\d{10}$/;
 
+const helpItems = [
+  { topic: 'about', title: 'About LocalFix', detail: 'App details and what LocalFix does', icon: 'info-outline' },
+  { topic: 'guide', title: 'How to use the app', detail: 'A quick guide to requesting a service', icon: 'menu-book' },
+  { topic: 'faq', title: 'Frequently asked questions', detail: 'Answers about location, addresses, and requests', icon: 'quiz' },
+  { topic: 'report', title: 'Report an app issue', detail: 'Prepare an issue report in your email app', icon: 'bug-report' },
+  { topic: 'terms', title: 'Terms and conditions', detail: 'Guidelines for using LocalFix', icon: 'description' },
+] as const;
+
 export default function ProfileScreen() {
+  const router = useRouter();
   const {
     session,
     profile,
@@ -25,6 +38,18 @@ export default function ProfileScreen() {
     signOut,
     updateProfile,
   } = useUser();
+  const { location } = useLocation();
+  const {
+    address,
+    states,
+    districts,
+    addressLoading,
+    addressError: addressSyncError,
+    realtimeConnected,
+    realtimeError,
+    saveAddress,
+    refreshAddressData,
+  } = useCustomerAddress();
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -33,6 +58,21 @@ export default function ProfileScreen() {
   const [draftEmail, setDraftEmail] = useState('');
   const [draftPhone, setDraftPhone] = useState('');
   const [showSignOutAlert, setShowSignOutAlert] = useState(false);
+  const [addressId, setAddressId] = useState<string | null>(null);
+  const [addressLine, setAddressLine] = useState('');
+  const [addressSociety, setAddressSociety] = useState('');
+  const [addressFlat, setAddressFlat] = useState('');
+  const [addressStateName, setAddressStateName] = useState('');
+  const [addressDistrictId, setAddressDistrictId] = useState('');
+  const [addressCoordinates, setAddressCoordinates] = useState<{
+    latitude: number | null;
+    longitude: number | null;
+  }>({ latitude: null, longitude: null });
+  const [addressSaving, setAddressSaving] = useState(false);
+  const [addressEditing, setAddressEditing] = useState(false);
+  const [addressError, setAddressError] = useState('');
+  const [addressSuccess, setAddressSuccess] = useState('');
+  const [addressAttemptedSave, setAddressAttemptedSave] = useState(false);
   const user = session?.user;
   const metadataFullName = typeof user?.user_metadata?.full_name === 'string'
     ? user.user_metadata.full_name
@@ -47,6 +87,62 @@ export default function ProfileScreen() {
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
     : null;
+  const addressDistrictName = districts.find((item) => item.id === address?.district_id)?.district_name;
+
+  useEffect(() => {
+    if (addressEditing) return;
+    if (!address) {
+      setAddressId(null);
+      setAddressLine('');
+      setAddressSociety('');
+      setAddressFlat('');
+      setAddressDistrictId('');
+      setAddressStateName('');
+      setAddressCoordinates({ latitude: null, longitude: null });
+      return;
+    }
+    const district = districts.find((item) => item.id === address.district_id);
+    setAddressId(address.id);
+    setAddressLine(address.address_line);
+    setAddressSociety(address.society_name ?? '');
+    setAddressFlat(address.flat_number ?? '');
+    setAddressDistrictId(address.district_id);
+    setAddressStateName(district?.state_name ?? '');
+    setAddressCoordinates({
+      latitude: address.latitude,
+      longitude: address.longitude,
+    });
+  }, [address, addressEditing, districts]);
+
+  const handleSaveAddress = async () => {
+    setAddressAttemptedSave(true);
+    setAddressError('');
+    setAddressSuccess('');
+    if (!addressLine.trim() || !addressStateName || !addressDistrictId || !user?.id) return;
+
+    setAddressSaving(true);
+    try {
+      const latitude = location?.coords.latitude ?? addressCoordinates.latitude;
+      const longitude = location?.coords.longitude ?? addressCoordinates.longitude;
+      const saved = await saveAddress(addressId, {
+        district_id: addressDistrictId,
+        address_line: addressLine.trim(),
+        society_name: addressSociety.trim() || null,
+        flat_number: addressFlat.trim() || null,
+        latitude,
+        longitude,
+      });
+      setAddressId(saved.id);
+      setAddressCoordinates({ latitude, longitude });
+      setAddressEditing(false);
+      setAddressAttemptedSave(false);
+      setAddressSuccess('Your service address has been saved.');
+    } catch (error) {
+      setAddressError(error instanceof Error ? error.message : 'Unable to save your address.');
+    } finally {
+      setAddressSaving(false);
+    }
+  };
 
   const handleSignOut = async () => {
     setBusy(true);
@@ -287,12 +383,178 @@ export default function ProfileScreen() {
           </View>
         ) : null}
 
+        <View style={styles.addressHeading}>
+          <View>
+            <Text style={styles.sectionTitle}>Service address</Text>
+            <Text style={styles.addressCaption}>
+              {realtimeConnected
+                ? 'Live updates enabled'
+                : realtimeError
+                  ? 'Live updates unavailable'
+                  : 'Connecting to live updates…'}
+            </Text>
+          </View>
+          {!addressEditing && !addressLoading ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={addressSaving}
+              onPress={() => {
+                setAddressError('');
+                setAddressSuccess('');
+                setAddressAttemptedSave(false);
+                setAddressEditing(true);
+              }}
+              style={styles.editButton}
+            >
+              <MaterialIcons name={addressId ? 'edit' : 'add'} size={16} color={Colors.light.backgroundSelected} />
+              <Text style={styles.editButtonText}>{addressId ? 'Edit' : 'Add address'}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <View style={styles.addressCard}>
+          {addressLoading ? (
+            <View style={styles.loading}>
+              <ActivityIndicator color={Colors.light.backgroundSelected} />
+              <Text style={styles.loadingText}>Loading your address…</Text>
+            </View>
+          ) : addressEditing ? (
+            <>
+              <Text style={styles.label}>Street address</Text>
+              <TextInput
+                accessibilityLabel="Street address"
+                autoCapitalize="words"
+                editable={!addressSaving}
+                maxLength={500}
+                onChangeText={setAddressLine}
+                placeholder="House number, street, and area"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={addressLine}
+              />
+              {addressAttemptedSave && !addressLine.trim() ? (
+                <Text style={styles.error}>Enter your street address.</Text>
+              ) : null}
+              <StateDistrictPicker
+                districts={districts}
+                districtError={addressAttemptedSave && !addressDistrictId}
+                districtId={addressDistrictId}
+                onDistrictChange={setAddressDistrictId}
+                onStateChange={(nextStateId) => {
+                  setAddressStateName(nextStateId);
+                  setAddressDistrictId('');
+                }}
+                stateError={addressAttemptedSave && !addressStateName}
+                stateName={addressStateName}
+                states={states}
+              />
+              <Text style={styles.label}>Society / Apartment (optional)</Text>
+              <TextInput
+                accessibilityLabel="Society or apartment"
+                autoCapitalize="words"
+                editable={!addressSaving}
+                maxLength={160}
+                onChangeText={setAddressSociety}
+                placeholder="Society or apartment name"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={addressSociety}
+              />
+              <Text style={styles.label}>Flat / House number (optional)</Text>
+              <TextInput
+                accessibilityLabel="Flat or house number"
+                autoCapitalize="characters"
+                editable={!addressSaving}
+                maxLength={80}
+                onChangeText={setAddressFlat}
+                placeholder="Flat or house number"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={addressFlat}
+              />
+              <View style={styles.addressActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={addressSaving}
+                  onPress={() => {
+                    setAddressEditing(false);
+                    setAddressError('');
+                    setAddressAttemptedSave(false);
+                  }}
+                  style={styles.cancelButton}
+                >
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={addressSaving}
+                  onPress={handleSaveAddress}
+                  style={[styles.saveButton, addressSaving && styles.saveButtonDisabled]}
+                >
+                  {addressSaving ? <ActivityIndicator color={Colors.light.text} /> : (
+                    <>
+                      <MaterialIcons name="check" size={18} color={Colors.light.text} />
+                      <Text style={styles.saveText}>Save address</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            </>
+          ) : address ? (
+            <>
+              <Text style={styles.addressValue}>{addressLine}</Text>
+              {addressFlat ? <Text style={styles.addressDetail}>Flat / House {addressFlat}</Text> : null}
+              {addressSociety ? <Text style={styles.addressDetail}>{addressSociety}</Text> : null}
+              <Text style={styles.addressDetail}>
+                {[addressDistrictName, addressStateName].filter(Boolean).join(', ')}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.addressCaption}>No service address saved yet.</Text>
+          )}
+          {addressError || addressSyncError || realtimeError ? (
+            <>
+              <Text accessibilityRole="alert" style={styles.error}>
+                {addressError || addressSyncError || realtimeError}
+              </Text>
+              <Pressable accessibilityRole="button" onPress={() => { void refreshAddressData(); }}>
+                <Text style={styles.editButtonText}>Refresh address data</Text>
+              </Pressable>
+            </>
+          ) : null}
+          {addressSuccess ? <Text accessibilityRole="summary" style={styles.success}>{addressSuccess}</Text> : null}
+        </View>
+
         <View style={styles.securityNote}>
           <MaterialIcons name="shield" size={20} color={Colors.light.backgroundSelected} />
           <View style={styles.securityCopy}>
             <Text style={styles.securityTitle}>Your account is private</Text>
             <Text style={styles.securityText}>Your personal profile is only visible to your account.</Text>
           </View>
+        </View>
+
+        <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Help & information</Text>
+        </View>
+        <View style={styles.helpCard}>
+          {helpItems.map((item, index) => (
+            <React.Fragment key={item.topic}>
+              {index > 0 ? <View style={styles.divider} /> : null}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push({ pathname: '/help', params: { topic: item.topic } })}
+                style={({ pressed }) => [styles.helpRow, pressed && styles.helpRowPressed]}
+              >
+                <View style={styles.helpIcon}>
+                  <MaterialIcons name={item.icon} size={19} color={Colors.light.backgroundSelected} />
+                </View>
+                <View style={styles.helpCopy}>
+                  <Text style={styles.helpTitle}>{item.title}</Text>
+                  <Text style={styles.helpDetail}>{item.detail}</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={22} color={Colors.light.textSecondary} />
+              </Pressable>
+            </React.Fragment>
+          ))}
         </View>
 
         <Pressable
@@ -347,6 +609,12 @@ const styles = StyleSheet.create({
   editButtonPressed: { opacity: 0.8 },
   editButtonText: { color: Colors.light.backgroundSelected, fontSize: 13, fontWeight: '700' },
   detailsCard: { marginHorizontal: 20, paddingHorizontal: 15, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
+  addressHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 24, marginBottom: 11 },
+  addressCaption: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 12 },
+  addressCard: { marginHorizontal: 20, padding: 15, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
+  addressValue: { color: Colors.light.text, fontSize: 14, fontWeight: '700', lineHeight: 21 },
+  addressDetail: { marginTop: 5, color: Colors.light.textSecondary, fontSize: 13 },
+  addressActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   detailRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 13 },
   detailIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFF2DE' },
   detailCopy: { flex: 1 },
@@ -371,6 +639,13 @@ const styles = StyleSheet.create({
   securityCopy: { flex: 1 },
   securityTitle: { color: Colors.light.text, fontSize: 13, fontWeight: '700' },
   securityText: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
+  helpCard: { marginHorizontal: 20, paddingHorizontal: 14, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
+  helpRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12 },
+  helpRowPressed: { opacity: 0.7 },
+  helpIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFF2DE' },
+  helpCopy: { flex: 1 },
+  helpTitle: { color: Colors.light.text, fontSize: 14, fontWeight: '700' },
+  helpDetail: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 11, lineHeight: 16 },
   logout: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 20, marginTop: 24, borderRadius: 12, backgroundColor: Colors.light.text },
   logoutPressed: { opacity: 0.85 },
   logoutDisabled: { opacity: 0.7 },

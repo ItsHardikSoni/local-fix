@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,43 +10,111 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { technicians } from '../../data/technicians';
-import { useUser } from '../../context/UserContext';
+import { useLocation } from '../../context/LocationContext';
+import { useServiceCategories } from '../../context/ServiceCategoryContext';
+import { useWorkerDirectory } from '../../context/WorkerDirectoryContext';
 import { Colors } from '../../constants/theme';
-
-const specialties = ['All', 'Plumber', 'Electrician', 'AC Technician'];
 
 export default function Technicians() {
   const router = useRouter();
-  const { district } = useUser();
-  const { type: issueType, desc: issueDescription, latitude, longitude } = useLocalSearchParams<{
+  const { district, locationLabel, locationLoading, locationError, refreshLocation } = useLocation();
+  const {
+    workers,
+    loading,
+    error,
+    realtimeConnected,
+    realtimeError,
+    refreshWorkers,
+  } = useWorkerDirectory();
+  const { categories } = useServiceCategories();
+  const {
+    type: issueType,
+    categoryId: requestedCategoryId,
+    districtId: requestedDistrictId,
+    districtName: requestedDistrictName,
+    stateName: requestedStateName,
+    desc: issueDescription,
+    latitude,
+    longitude,
+  } = useLocalSearchParams<{
     type?: string;
+    categoryId?: string;
+    districtId?: string;
+    districtName?: string;
+    stateName?: string;
     desc?: string;
     latitude?: string;
     longitude?: string;
   }>();
   const [search, setSearch] = useState('');
-  const [specialty, setSpecialty] = useState('All');
+  const [specialty, setSpecialty] = useState(
+    typeof issueType === 'string' && issueType ? issueType : 'All',
+  );
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [topRatedFirst, setTopRatedFirst] = useState(false);
-  const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const specialties = useMemo(() => [
+    'All',
+    ...categories.map((category) => category.name),
+  ], [categories]);
+  const activeSpecialty = specialties.includes(specialty)
+    || (Boolean(issueType) && specialty === issueType)
+    ? specialty
+    : 'All';
+  const activeCategoryId = activeSpecialty === 'All'
+    ? (specialty === issueType && typeof requestedCategoryId === 'string' ? requestedCategoryId : '')
+    : categories.find((category) => category.name === activeSpecialty)?.id
+      ?? (activeSpecialty === issueType && typeof requestedCategoryId === 'string'
+        ? requestedCategoryId
+        : '');
+  const selectedServiceName = activeSpecialty !== 'All'
+    ? activeSpecialty
+    : typeof issueType === 'string' ? issueType : '';
+  const targetDistrictName = typeof requestedDistrictName === 'string' && requestedDistrictName
+    ? requestedDistrictName
+    : district;
 
-  const filteredTechnicians = useMemo(() => {
+  const filteredWorkers = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return technicians
-      .filter((tech) => tech.district === district)
-      .filter((tech) => specialty === 'All' || tech.specialty === specialty)
-      .filter((tech) => !favoritesOnly || favoriteIds.includes(tech.id))
-      .filter((tech) => !query || `${tech.name} ${tech.specialty}`.toLowerCase().includes(query))
-      .sort((left, right) => topRatedFirst ? right.rating - left.rating : left.name.localeCompare(right.name));
-  }, [district, favoriteIds, favoritesOnly, search, specialty, topRatedFirst]);
+    return workers
+      .filter((worker) => {
+        if (typeof requestedDistrictId === 'string' && requestedDistrictId) {
+          return worker.districtId === requestedDistrictId
+            && (typeof requestedStateName !== 'string'
+              || !requestedStateName
+              || worker.state.toLowerCase() === requestedStateName.toLowerCase());
+        }
+        return targetDistrictName !== null
+          && worker.district.toLowerCase() === targetDistrictName.toLowerCase();
+      })
+      .filter((worker) => !activeCategoryId || worker.services.some((service) => service.id === activeCategoryId))
+      .filter((worker) => !favoritesOnly || favoriteIds.includes(worker.id))
+      .filter((worker) => !query || `${worker.name} ${worker.services.map((service) => service.name).join(' ')}`.toLowerCase().includes(query))
+      .sort((left, right) => topRatedFirst
+        ? right.averageRating - left.averageRating
+        : left.name.localeCompare(right.name));
+  }, [
+    activeCategoryId,
+    favoriteIds,
+    favoritesOnly,
+    requestedDistrictId,
+    requestedStateName,
+    search,
+    targetDistrictName,
+    topRatedFirst,
+    workers,
+  ]);
 
-  const select = (tech: typeof technicians[number]) => {
+  const select = (workerId: string) => {
     router.push({
       pathname: '/jobs',
       params: {
-        techId: String(tech.id),
-        type: typeof issueType === 'string' && issueType ? issueType : tech.specialty,
+        workerId,
+        type: selectedServiceName,
+        categoryId: activeCategoryId,
+        districtId: typeof requestedDistrictId === 'string' ? requestedDistrictId : '',
+        districtName: targetDistrictName ?? '',
+        stateName: typeof requestedStateName === 'string' ? requestedStateName : '',
         desc: typeof issueDescription === 'string' ? issueDescription : '',
         latitude: typeof latitude === 'string' ? latitude : '',
         longitude: typeof longitude === 'string' ? longitude : '',
@@ -53,7 +122,7 @@ export default function Technicians() {
     });
   };
 
-  const toggleFavorite = (id: number) => {
+  const toggleFavorite = (id: string) => {
     setFavoriteIds((current) => current.includes(id)
       ? current.filter((favoriteId) => favoriteId !== id)
       : [...current, id]);
@@ -67,10 +136,21 @@ export default function Technicians() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <View style={styles.locationPill}>
+          <Pressable
+            accessibilityLabel="Refresh current location"
+            accessibilityRole="button"
+            onPress={() => { void refreshLocation(); }}
+            style={styles.locationPill}
+          >
             <MaterialIcons name="location-on" size={16} color={Colors.light.backgroundSelected} />
-            <Text style={styles.locationText}>{district}, Bihar</Text>
-          </View>
+            <Text numberOfLines={1} style={styles.locationText}>
+              {locationLabel || (locationLoading
+                ? 'Finding your location…'
+                : locationError
+                  ? 'Tap to enable location'
+                  : 'Location unavailable')}
+            </Text>
+          </Pressable>
           <Text style={styles.title}>Find your local expert</Text>
           <Text style={styles.subtitle}>Trusted home service professionals, close to home.</Text>
           <View style={styles.searchBox}>
@@ -103,6 +183,17 @@ export default function Technicians() {
             <Text style={styles.requestText}>Finding help for: <Text style={styles.requestStrong}>{issueType}</Text></Text>
           </View>
         ) : null}
+        {targetDistrictName ? (
+          <View style={styles.requestBanner}>
+            <MaterialIcons name="place" size={18} color={Colors.light.backgroundSelected} />
+            <Text style={styles.requestText}>
+              Showing workers in{' '}
+              <Text style={styles.requestStrong}>
+                {[requestedDistrictName || targetDistrictName, requestedStateName].filter(Boolean).join(', ')}
+              </Text>
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.filterHeading}>
           <Text style={styles.sectionTitle}>Service</Text>
@@ -124,7 +215,7 @@ export default function Technicians() {
           showsHorizontalScrollIndicator={false}
         >
           {specialties.map((item) => {
-            const selected = specialty === item;
+            const selected = activeSpecialty === item;
             return (
               <Pressable
                 accessibilityRole="button"
@@ -149,28 +240,71 @@ export default function Technicians() {
         </ScrollView>
 
         <View style={styles.resultsHeading}>
-          <Text style={styles.sectionTitle}>Available professionals</Text>
-          <Text style={styles.resultCount}>{filteredTechnicians.length} found</Text>
+          <View>
+            <Text style={styles.sectionTitle}>Verified professionals</Text>
+            <Text style={styles.liveStatus}>
+              {realtimeConnected
+                ? 'Live worker updates enabled'
+                : realtimeError
+                  ? 'Live updates unavailable'
+                  : 'Connecting to live updates…'}
+            </Text>
+          </View>
+          <Text style={styles.resultCount}>{filteredWorkers.length} found</Text>
         </View>
 
-        {filteredTechnicians.map((tech) => {
-          const isFavorite = favoriteIds.includes(tech.id);
+        {error && workers.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text accessibilityRole="alert" style={styles.emptyText}>{error}</Text>
+            <Pressable accessibilityRole="button" onPress={() => { void refreshWorkers(); }} style={styles.resetButton}>
+              <Text style={styles.resetText}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : loading ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator color={Colors.light.backgroundSelected} />
+            <Text style={styles.emptyText}>Loading verified workers…</Text>
+          </View>
+        ) : null}
+        {error && workers.length > 0 ? (
+          <View style={styles.refreshNotice}>
+            <Text accessibilityRole="alert" style={styles.emptyText}>{error}</Text>
+            <Pressable accessibilityRole="button" onPress={() => { void refreshWorkers(); }}>
+              <Text style={styles.resetText}>Refresh workers</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {filteredWorkers.map((worker) => {
+          const isFavorite = favoriteIds.includes(worker.id);
+          const rateParts = [
+            worker.hourlyRate === null ? null : `₹${worker.hourlyRate}/hour`,
+            worker.dailyRate === null ? null : `₹${worker.dailyRate}/day`,
+          ].filter(Boolean);
+          const availabilityLabel = worker.availabilityStatus[0].toUpperCase()
+            + worker.availabilityStatus.slice(1);
           return (
-            <View key={tech.id} style={styles.card}>
+            <View key={worker.id} style={styles.card}>
               <View style={styles.cardTop}>
                 <View style={styles.avatar}>
                   <MaterialIcons name="person" size={28} color={Colors.light.text} />
                 </View>
                 <View style={styles.techIdentity}>
-                  <Text style={styles.techName}>{tech.name}</Text>
-                  <Text style={styles.techSpecialty}>{tech.specialty}</Text>
+                  <Text style={styles.techName}>{worker.name}</Text>
+                  <Text style={styles.techSpecialty} numberOfLines={2}>
+                    {worker.services.map((service) => service.name).join(' · ')}
+                  </Text>
+                  <View style={styles.verifiedRow}>
+                    <MaterialIcons name="verified" size={13} color="#24734A" />
+                    <Text style={styles.verifiedText}>Verified</Text>
+                  </View>
                 </View>
                 <Pressable
-                  accessibilityLabel={isFavorite ? `Remove ${tech.name} from saved technicians` : `Save ${tech.name}`}
+                  accessibilityLabel={isFavorite ? `Remove ${worker.name} from saved technicians` : `Save ${worker.name}`}
                   accessibilityRole="button"
                   accessibilityState={{ checked: isFavorite }}
                   hitSlop={8}
-                  onPress={() => toggleFavorite(tech.id)}
+                  onPress={() => toggleFavorite(worker.id)}
                   style={styles.favoriteButton}
                 >
                   <MaterialIcons name={isFavorite ? 'favorite' : 'favorite-border'} size={22} color={isFavorite ? '#B42318' : Colors.light.textSecondary} />
@@ -180,19 +314,35 @@ export default function Technicians() {
               <View style={styles.stats}>
                 <View style={styles.ratingPill}>
                   <MaterialIcons name="star" size={15} color="#C27B00" />
-                  <Text style={styles.ratingText}>{tech.rating.toFixed(1)}</Text>
+                  <Text style={styles.ratingText}>{worker.averageRating.toFixed(1)}/5</Text>
                 </View>
                 <Text style={styles.statDivider}>·</Text>
-                <Text style={styles.statText}>In {tech.district}</Text>
+                <Text style={styles.statText}>{worker.completedJobsCount} jobs</Text>
                 <Text style={styles.statDivider}>·</Text>
-                <Text style={styles.statText}>₹{tech.pricePerHour}/hr</Text>
+                <Text style={styles.statText}>{worker.experienceYears} yrs experience</Text>
               </View>
 
+              <View style={styles.workerMeta}>
+                <Text style={styles.workerDistrict}>{worker.district}</Text>
+                <View style={[
+                  styles.availabilityBadge,
+                  worker.availabilityStatus === 'available'
+                    ? styles.availabilityAvailable
+                    : worker.availabilityStatus === 'busy'
+                      ? styles.availabilityBusy
+                      : styles.availabilityOffline,
+                ]}>
+                  <Text style={styles.availabilityText}>{availabilityLabel}</Text>
+                </View>
+              </View>
               <View style={styles.cardFooter}>
-                <Text style={styles.rateLabel}>Transparent hourly rate</Text>
+                <View style={styles.rateCopy}>
+                  <Text style={styles.rateLabel}>{rateParts.join(' · ') || 'Rate not set'}</Text>
+                  {worker.ratesNegotiable ? <Text style={styles.rateNegotiable}>Rate negotiable</Text> : null}
+                </View>
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => select(tech)}
+                  onPress={() => select(worker.id)}
                   style={({ pressed }) => [styles.bookButton, pressed && styles.pressed]}
                 >
                   <Text style={styles.bookText}>View details</Text>
@@ -203,24 +353,29 @@ export default function Technicians() {
           );
         })}
 
-        {filteredTechnicians.length === 0 ? (
+        {!loading && !error && filteredWorkers.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyIcon}>
               <MaterialIcons name={favoritesOnly ? 'favorite-border' : 'search-off'} size={28} color={Colors.light.textSecondary} />
             </View>
-            <Text style={styles.emptyTitle}>No matches just yet</Text>
-            <Text style={styles.emptyText}>Try another search or service filter to see available professionals.</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setSearch('');
-                setSpecialty('All');
-                setFavoritesOnly(false);
-              }}
-              style={styles.resetButton}
-            >
-              <Text style={styles.resetText}>Clear filters</Text>
-            </Pressable>
+            <Text style={styles.emptyTitle}>
+              {!targetDistrictName ? 'Location needed' : 'No matching workers yet'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {!targetDistrictName
+                ? 'Allow location access to find professionals in your area.'
+                : `There are no verified workers for ${activeSpecialty === 'All' ? 'this service' : activeSpecialty} in ${[requestedDistrictName || targetDistrictName, requestedStateName].filter(Boolean).join(', ')} yet.`}
+            </Text>
+            {!targetDistrictName ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={locationLoading}
+                onPress={() => { void refreshLocation(); }}
+                style={styles.resetButton}
+              >
+                <Text style={styles.resetText}>{locationLoading ? 'Finding location…' : 'Try again'}</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
       </ScrollView>
@@ -254,20 +409,33 @@ const styles = StyleSheet.create({
   filterTextSelected: { color: Colors.light.backgroundElement },
   resultsHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginBottom: 12 },
   resultCount: { color: Colors.light.textSecondary, fontSize: 12 },
+  liveStatus: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 11 },
+  refreshNotice: { marginHorizontal: 20, marginBottom: 12, padding: 13, borderRadius: 12, backgroundColor: Colors.light.backgroundElement },
   card: { marginHorizontal: 20, marginBottom: 13, padding: 16, borderWidth: 1, borderColor: '#EDF1F5', borderRadius: 17, backgroundColor: Colors.light.backgroundElement, elevation: 2, shadowColor: Colors.light.text, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 7 },
   cardTop: { flexDirection: 'row', alignItems: 'center' },
   avatar: { width: 50, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#FFF2DE' },
   techIdentity: { flex: 1, marginLeft: 12 },
   techName: { color: Colors.light.text, fontSize: 16, fontWeight: '700' },
   techSpecialty: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 13 },
+  verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 5 },
+  verifiedText: { color: '#24734A', fontSize: 10, fontWeight: '700' },
   favoriteButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   stats: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 15 },
   ratingPill: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8, backgroundColor: '#FFF2DE' },
   ratingText: { color: Colors.light.text, fontSize: 12, fontWeight: '700' },
   statDivider: { color: '#A0AAB8', fontSize: 15 },
   statText: { color: Colors.light.textSecondary, fontSize: 12 },
+  workerMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  workerDistrict: { color: Colors.light.textSecondary, fontSize: 12 },
+  availabilityBadge: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 10 },
+  availabilityAvailable: { backgroundColor: '#E8F5EC' },
+  availabilityBusy: { backgroundColor: '#FFF4D6' },
+  availabilityOffline: { backgroundColor: '#EFF3F8' },
+  availabilityText: { color: Colors.light.text, fontSize: 11, fontWeight: '700' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E8EDF2' },
+  rateCopy: { flex: 1, paddingRight: 8 },
   rateLabel: { color: Colors.light.textSecondary, fontSize: 11 },
+  rateNegotiable: { marginTop: 4, color: Colors.light.backgroundSelected, fontSize: 10, fontWeight: '700' },
   bookButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, borderRadius: 10, backgroundColor: Colors.light.backgroundSelected },
   bookText: { color: Colors.light.text, fontSize: 12, fontWeight: '700' },
   pressed: { opacity: 0.8 },

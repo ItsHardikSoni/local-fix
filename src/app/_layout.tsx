@@ -8,6 +8,9 @@ import LoadingScreen from '../components/loading-screen';
 import SplashScreen from '../components/splash-screen';
 import { UserProvider, useUser } from '../context/UserContext';
 import { LocationProvider } from '../context/LocationContext';
+import { CustomerAddressProvider } from '../context/CustomerAddressContext';
+import { ServiceCategoryProvider } from '../context/ServiceCategoryContext';
+import { WorkerDirectoryProvider } from '../context/WorkerDirectoryContext';
 import { Colors } from '../constants/theme';
 
 function AppEntry() {
@@ -54,6 +57,7 @@ function AppEntry() {
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="help" options={{ title: 'Help & information',headerShown: false }} />
     </Stack>
   );
 
@@ -76,9 +80,15 @@ function AppEntry() {
 export default function Layout() {
   return (
     <SafeAreaProvider>
-      <UserProvider district="Muzaffarpur">
+      <UserProvider>
         <LocationProvider>
-          <AppEntry />
+          <ServiceCategoryProvider>
+            <WorkerDirectoryProvider>
+              <CustomerAddressProvider>
+                <AppEntry />
+              </CustomerAddressProvider>
+            </WorkerDirectoryProvider>
+          </ServiceCategoryProvider>
         </LocationProvider>
       </UserProvider>
     </SafeAreaProvider>

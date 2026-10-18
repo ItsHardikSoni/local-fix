@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,14 +12,11 @@ import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useUser } from '../../context/UserContext';
 import { useLocation } from '../../context/LocationContext';
+import { useServiceCategories } from '../../context/ServiceCategoryContext';
+import { getServiceCategoryIcon } from '../../constants/service-category-visuals';
 import ThemedAlert from '../../components/ui/themed-alert';
 
-const services = [
-  { label: 'Plumbing', icon: 'plumbing' as const, color: '#E8F3FF', issue: 'Plumbing' },
-  { label: 'Electrical', icon: 'electrical-services' as const, color: '#FFF2DE', issue: 'Electrical' },
-  { label: 'Air conditioning', icon: 'ac-unit' as const, color: '#E8F7F4', issue: 'Air conditioning' },
-  { label: 'General repair', icon: 'handyman' as const, color: '#F2EDFF', issue: 'General repair' },
-];
+const serviceColors = ['#E8F3FF', '#FFF2DE', '#E8F7F4', '#F2EDFF'];
 
 const getGreeting = () => {
   const hour = new Date().getHours();
@@ -29,8 +27,15 @@ const getGreeting = () => {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { district, session, profile } = useUser();
-  const { locationLabel, locationLoading, locationError, refreshLocation } = useLocation();
+  const { session, profile } = useUser();
+  const { district, locationLabel, locationLoading, locationError, refreshLocation } = useLocation();
+  const {
+    categories,
+    loading: categoriesLoading,
+    error: categoriesError,
+    realtimeConnected,
+    refreshCategories,
+  } = useServiceCategories();
   const [showWorkerAlert, setShowWorkerAlert] = useState(false);
   const metadataName = session?.user.user_metadata?.full_name;
   const userName = profile?.full_name
@@ -99,24 +104,60 @@ export default function HomeScreen() {
           <MaterialIcons name="home-repair-service" size={24} color={Colors.light.backgroundSelected} />
         </View>
 
-        <View style={styles.serviceGrid}>
-          {services.map((service) => (
-            <Pressable
-              accessibilityRole="button"
-              key={service.label}
-              onPress={() => openReport(service.issue)}
-              style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]}
-            >
-              <View style={[styles.serviceIcon, { backgroundColor: service.color }]}>
-                <MaterialIcons name={service.icon} size={24} color={Colors.light.text} />
-              </View>
-              <Text style={styles.serviceName}>{service.label}</Text>
-              <MaterialIcons name="arrow-forward" size={17} color={Colors.light.textSecondary} />
+        <Text style={styles.liveStatus}>
+          {realtimeConnected ? 'Services update live' : 'Live service updates unavailable'}
+        </Text>
+        {categoriesLoading && categories.length === 0 ? (
+          <View style={styles.serviceMessage}>
+            <ActivityIndicator color={Colors.light.backgroundSelected} />
+            <Text style={styles.serviceMessageText}>Loading available services…</Text>
+          </View>
+        ) : categoriesError && categories.length === 0 ? (
+          <View style={styles.serviceError}>
+            <Text accessibilityRole="alert" style={styles.serviceMessageText}>{categoriesError}</Text>
+            <Pressable accessibilityRole="button" onPress={() => { void refreshCategories(); }}>
+              <Text style={styles.retryText}>Try again</Text>
             </Pressable>
-          ))}
-        </View>
+          </View>
+        ) : categories.length === 0 ? (
+          <View style={styles.serviceMessage}>
+            <Text style={styles.serviceMessageText}>No services are currently available.</Text>
+          </View>
+        ) : (
+          <>
+            {categoriesError ? (
+              <View style={styles.serviceError}>
+                <Text accessibilityRole="alert" style={styles.serviceMessageText}>{categoriesError}</Text>
+                <Pressable accessibilityRole="button" onPress={() => { void refreshCategories(); }}>
+                  <Text style={styles.retryText}>Refresh services</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <View style={styles.serviceGrid}>
+              {categories.map((service, index) => (
+                <Pressable
+                  accessibilityRole="button"
+                  key={service.id}
+                  onPress={() => openReport(service.name)}
+                  style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]}
+                >
+                  <View style={styles.serviceCardTop}>
+                    <View style={[styles.serviceIcon, { backgroundColor: serviceColors[index % serviceColors.length] }]}>
+                      <MaterialIcons name={getServiceCategoryIcon(service.name)} size={23} color={Colors.light.text} />
+                    </View>
+                    <MaterialIcons name="arrow-forward" size={17} color={Colors.light.textSecondary} />
+                  </View>
+                  <Text numberOfLines={1} style={styles.serviceName}>{service.name}</Text>
+                  <Text numberOfLines={2} style={styles.serviceDescription}>{service.description}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
 
+        <View style={styles.sectionHeading}>
         <Text style={styles.sectionTitle}>Quick access</Text>
+        </View>
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push('/technicians')}
@@ -127,7 +168,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.quickCopy}>
             <Text style={styles.quickTitle}>Browse local technicians</Text>
-            <Text style={styles.quickSubtitle}>See trusted professionals in {district}</Text>
+            <Text style={styles.quickSubtitle}>See trusted professionals in {district || 'your area'}</Text>
           </View>
           <MaterialIcons name="chevron-right" size={24} color={Colors.light.textSecondary} />
         </Pressable>
@@ -214,20 +255,22 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: Colors.light.text, fontSize: 19, fontWeight: '700' },
   sectionSubtitle: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 13 },
+  liveStatus: { marginHorizontal: 20, marginTop: -6, marginBottom: 10, color: Colors.light.textSecondary, fontSize: 11 },
+  serviceMessage: { minHeight: 92, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginHorizontal: 20, padding: 16, borderRadius: 15, backgroundColor: Colors.light.backgroundElement },
+  serviceError: { marginHorizontal: 20, padding: 14, borderRadius: 15, backgroundColor: Colors.light.backgroundElement },
+  serviceMessageText: { flexShrink: 1, color: Colors.light.textSecondary, fontSize: 13, lineHeight: 19 },
+  retryText: { marginTop: 9, color: Colors.light.backgroundSelected, fontSize: 13, fontWeight: '700' },
   serviceGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginHorizontal: 20,
-    marginBottom: 26,
   },
   serviceCard: {
     width: '48%',
-    minHeight: 112,
-    flexDirection: 'row',
-    alignItems: 'center',
+    minHeight: 140,
     marginBottom: 12,
-    paddingHorizontal: 12,
+    padding: 12,
     borderRadius: 16,
     backgroundColor: Colors.light.backgroundElement,
     elevation: 2,
@@ -241,10 +284,11 @@ const styles = StyleSheet.create({
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 9,
     borderRadius: 13,
   },
-  serviceName: { flex: 1, color: Colors.light.text, fontSize: 13, fontWeight: '600' },
+  serviceCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  serviceName: { marginTop: 10, color: Colors.light.text, fontSize: 13, fontWeight: '700' },
+  serviceDescription: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 11, lineHeight: 15 },
   cardPressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
   quickCard: {
     minHeight: 76,

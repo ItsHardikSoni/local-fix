@@ -8,22 +8,23 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { technicians } from '../../data/technicians';
-import { Colors } from '../../constants/theme';
-import ThemedAlert from '../../components/ui/themed-alert';
+import { useWorkerDirectory } from '../context/WorkerDirectoryContext';
+import { Colors } from '../constants/theme';
+import ThemedAlert from '../components/ui/themed-alert';
 
 export default function Job() {
   const router = useRouter();
-  const { techId, type, desc, latitude, longitude } = useLocalSearchParams<{
-    techId?: string;
+  const { workerId, type, desc, latitude, longitude } = useLocalSearchParams<{
+    workerId?: string;
     type?: string;
     desc?: string;
     latitude?: string;
     longitude?: string;
   }>();
+  const { workers, loading } = useWorkerDirectory();
   const [showPaymentAlert, setShowPaymentAlert] = useState(false);
-  const tech = technicians.find((technician) => technician.id === Number(techId));
-  const issueType = typeof type === 'string' && type ? type : tech?.specialty;
+  const worker = workers.find((item) => item.id === workerId);
+  const issueType = typeof type === 'string' && type ? type : worker?.services[0]?.name;
   const description = typeof desc === 'string' ? desc : '';
   const latitudeValue = typeof latitude === 'string' ? Number(latitude) : NaN;
   const longitudeValue = typeof longitude === 'string' ? Number(longitude) : NaN;
@@ -35,29 +36,38 @@ export default function Job() {
     ? `${latitude}, ${longitude}`
     : null;
 
-  if (!tech) {
-    const hasInvalidTechId = Boolean(techId);
+  if (!worker && loading) {
+    return (
+      <View style={styles.emptyPage}>
+        <MaterialIcons name="hourglass-empty" size={30} color={Colors.light.backgroundSelected} />
+        <Text style={styles.emptyText}>Loading worker details…</Text>
+      </View>
+    );
+  }
+
+  if (!worker) {
+    const hasInvalidWorkerId = Boolean(workerId);
     return (
       <View style={styles.emptyPage}>
         <View style={styles.emptyIcon}>
           <MaterialIcons
-            name={hasInvalidTechId ? 'person-search' : 'work-outline'}
+            name={hasInvalidWorkerId ? 'person-search' : 'work-outline'}
             size={30}
             color={Colors.light.textSecondary}
           />
         </View>
-        <Text style={styles.emptyTitle}>{hasInvalidTechId ? 'Technician not found' : 'No job selected yet'}</Text>
+        <Text style={styles.emptyTitle}>{hasInvalidWorkerId ? 'Worker not found' : 'No worker selected yet'}</Text>
         <Text style={styles.emptyText}>
-          {hasInvalidTechId
-            ? 'This technician may no longer be available. Browse the local directory to choose another.'
+          {hasInvalidWorkerId
+            ? 'This worker may no longer be listed or verified. Browse the local directory to choose another.'
             : 'Start a service request and choose a technician to review the request details here.'}
         </Text>
         <Pressable
-          onPress={() => router.replace(hasInvalidTechId ? '/technicians' : '/report')}
+          onPress={() => router.replace(hasInvalidWorkerId ? '/technicians' : '/report')}
           style={styles.emptyButton}
         >
           <Text style={styles.emptyButtonText}>
-            {hasInvalidTechId ? 'Browse technicians' : 'Start a request'}
+            {hasInvalidWorkerId ? 'Browse technicians' : 'Start a request'}
           </Text>
         </Pressable>
       </View>
@@ -88,12 +98,12 @@ export default function Job() {
             <MaterialIcons name="person" size={34} color={Colors.light.text} />
           </View>
           <View style={styles.techIdentity}>
-            <Text style={styles.techName}>{tech.name}</Text>
-            <Text style={styles.techSpecialty}>{tech.specialty}</Text>
+            <Text style={styles.techName}>{worker.name}</Text>
+            <Text style={styles.techSpecialty}>{worker.services.map((service) => service.name).join(' · ')}</Text>
             <View style={styles.ratingRow}>
               <MaterialIcons name="star" size={16} color="#C27B00" />
-              <Text style={styles.rating}>{tech.rating.toFixed(1)}</Text>
-              <Text style={styles.ratingCaption}>community rating</Text>
+              <Text style={styles.rating}>{worker.averageRating.toFixed(1)}</Text>
+              <Text style={styles.ratingCaption}>out of 5</Text>
             </View>
           </View>
           <View style={styles.serviceIcon}>
@@ -133,7 +143,31 @@ export default function Job() {
             </View>
             <View style={styles.detailCopy}>
               <Text style={styles.detailLabel}>{serviceLocation ? 'Your GPS location' : 'Service area'}</Text>
-              <Text style={styles.detailValue}>{serviceLocation || tech.district}</Text>
+              <Text style={styles.detailValue}>{serviceLocation || worker.district}</Text>
+            </View>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.detailRow}>
+            <View style={styles.detailIcon}>
+              <MaterialIcons name="verified" size={19} color={Colors.light.backgroundSelected} />
+            </View>
+            <View style={styles.detailCopy}>
+              <Text style={styles.detailLabel}>Verified · experience · completed jobs</Text>
+              <Text style={styles.detailValue}>
+                {worker.experienceYears} years · {worker.completedJobsCount} completed jobs
+              </Text>
+            </View>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.detailRow}>
+            <View style={styles.detailIcon}>
+              <MaterialIcons name="event-available" size={19} color={Colors.light.backgroundSelected} />
+            </View>
+            <View style={styles.detailCopy}>
+              <Text style={styles.detailLabel}>Current availability</Text>
+              <Text style={styles.detailValue}>
+                {worker.availabilityStatus[0].toUpperCase() + worker.availabilityStatus.slice(1)}
+              </Text>
             </View>
           </View>
         </View>
@@ -143,7 +177,15 @@ export default function Job() {
             <Text style={styles.priceLabel}>Technician rate</Text>
             <Text style={styles.priceCaption}>Final cost depends on the work required</Text>
           </View>
-          <Text style={styles.price}>₹{tech.pricePerHour}<Text style={styles.perHour}>/hr</Text></Text>
+          <View style={styles.rateValues}>
+            {worker.hourlyRate !== null ? (
+              <Text style={styles.price}>₹{worker.hourlyRate}<Text style={styles.perHour}>/hour</Text></Text>
+            ) : null}
+            {worker.dailyRate !== null ? (
+              <Text style={styles.price}>₹{worker.dailyRate}<Text style={styles.perHour}>/day</Text></Text>
+            ) : null}
+            {worker.ratesNegotiable ? <Text style={styles.negotiable}>Rates are negotiable</Text> : null}
+          </View>
         </View>
 
         <View style={styles.notice}>
@@ -206,6 +248,8 @@ const styles = StyleSheet.create({
   priceLabel: { color: Colors.light.text, fontSize: 14, fontWeight: '700' },
   priceCaption: { maxWidth: 200, marginTop: 4, color: Colors.light.textSecondary, fontSize: 11, lineHeight: 16 },
   price: { color: Colors.light.text, fontSize: 20, fontWeight: '800' },
+  rateValues: { alignItems: 'flex-end', gap: 3 },
+  negotiable: { color: Colors.light.backgroundSelected, fontSize: 11, fontWeight: '700' },
   perHour: { fontSize: 12, fontWeight: '500' },
   notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginHorizontal: 20, marginTop: 15, padding: 13, borderRadius: 12, backgroundColor: '#EFF3F8' },
   noticeText: { flex: 1, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 18 },

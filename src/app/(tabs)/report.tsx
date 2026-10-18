@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,47 +14,123 @@ import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useLocation } from '../../context/LocationContext';
-
-const issueTypes = [
-  { label: 'Water leak', icon: 'water-drop' as const },
-  { label: 'Electrical', icon: 'bolt' as const },
-  { label: 'AC repair', icon: 'ac-unit' as const },
-  { label: 'General repair', icon: 'handyman' as const },
-];
+import { useCustomerAddress } from '../../context/CustomerAddressContext';
+import { useServiceCategories } from '../../context/ServiceCategoryContext';
+import { getServiceCategoryIcon } from '../../constants/service-category-visuals';
+import StateDistrictPicker from '../../components/state-district-picker';
 
 export default function Report() {
   const router = useRouter();
-  const { location, locationLoading, locationError, refreshLocation } = useLocation();
+  const { location, district: currentDistrict, locationLoading, locationError, refreshLocation } = useLocation();
+  const {
+    address,
+    states,
+    districts,
+    addressLoading,
+    addressError: addressSyncError,
+    realtimeConnected,
+    realtimeError,
+    refreshAddressData,
+  } = useCustomerAddress();
+  const {
+    categories,
+    loading: categoriesLoading,
+    error: categoriesError,
+    refreshCategories,
+  } = useServiceCategories();
   const { type: initialType } = useLocalSearchParams<{ type?: string }>();
-  const [type, setType] = useState('Water leak');
+  const [type, setType] = useState<string | null>(null);
   const [desc, setDesc] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
+  const [addressDraftDirty, setAddressDraftDirty] = useState(false);
+  const [usingAlternateAddress, setUsingAlternateAddress] = useState(false);
+  const [addressLine, setAddressLine] = useState('');
+  const [societyName, setSocietyName] = useState('');
+  const [flatNumber, setFlatNumber] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [districtId, setDistrictId] = useState('');
+  const [addressCoordinates, setAddressCoordinates] = useState<{
+    latitude: number | null;
+    longitude: number | null;
+  }>({ latitude: null, longitude: null });
+  const [saving, setSaving] = useState(false);
+  const [addressError, setAddressError] = useState('');
 
   useEffect(() => {
-    if (typeof initialType === 'string' && initialType.trim()) {
-      setType(initialType);
+    if (addressDraftDirty) return;
+    if (address) {
+      setUsingAlternateAddress(false);
+      setAddressLine(address.address_line);
+      setSocietyName(address.society_name ?? '');
+      setFlatNumber(address.flat_number ?? '');
+      setDistrictId(address.district_id);
+      setStateName(districts.find((item) => item.id === address.district_id)?.state_name ?? '');
+      setAddressCoordinates({ latitude: address.latitude, longitude: address.longitude });
+    } else {
+      setUsingAlternateAddress(false);
+      setAddressLine('');
+      setSocietyName('');
+      setFlatNumber('');
+      setDistrictId('');
+      setStateName('');
+      setAddressCoordinates({ latitude: null, longitude: null });
     }
-  }, [initialType]);
+  }, [address, addressDraftDirty, districts]);
 
-  const typeError = attemptedSubmit && !type.trim();
+  useEffect(() => {
+    if (addressDraftDirty || districtId || !currentDistrict || districts.length === 0) return;
+    const match = districts.find((item) => (
+      item.district_name.toLowerCase() === currentDistrict.toLowerCase()
+    ));
+    if (match?.state_name) {
+      setStateName(match.state_name);
+      setDistrictId(match.id);
+    }
+  }, [addressDraftDirty, currentDistrict, districtId, districts]);
+
+  const selectedCategory = type && categories.some((item) => item.name === type)
+    ? type
+    : (typeof initialType === 'string'
+      ? categories.find((item) => item.name.toLowerCase() === initialType.trim().toLowerCase())?.name
+      : undefined) ?? categories[0]?.name ?? '';
+  const typeError = attemptedSubmit && !selectedCategory;
   const descriptionError = attemptedSubmit && desc.trim().length < 8;
+  const addressLineError = attemptedSubmit && !addressLine.trim();
+  const stateError = attemptedSubmit && !stateName;
+  const districtError = attemptedSubmit && !districtId;
 
   const onSubmit = async () => {
     setAttemptedSubmit(true);
-    if (!type.trim() || desc.trim().length < 8) return;
+    if (!selectedCategory || desc.trim().length < 8) return;
+    if (!addressLine.trim() || !stateName || !districtId) return;
+    setSaving(true);
+    setAddressError('');
+    try {
+      const currentLocation = await refreshLocation() ?? location;
+      const latitude = currentLocation?.coords.latitude ?? addressCoordinates.latitude;
+      const longitude = currentLocation?.coords.longitude ?? addressCoordinates.longitude;
 
-    const currentLocation = await refreshLocation();
-    if (!currentLocation) return;
-
-    router.push({
-      pathname: '/technicians',
-      params: {
-        type: type.trim(),
-        desc: desc.trim(),
-        latitude: String(currentLocation.coords.latitude),
-        longitude: String(currentLocation.coords.longitude),
-      },
-    });
+      router.push({
+        pathname: '/technicians',
+        params: {
+          type: selectedCategory,
+          categoryId: categories.find((category) => category.name === selectedCategory)?.id ?? '',
+          districtId,
+          districtName: districts.find((item) => item.id === districtId)?.district_name ?? '',
+          stateName,
+          desc: desc.trim(),
+          addressLine: addressLine.trim(),
+          societyName: societyName.trim(),
+          flatNumber: flatNumber.trim(),
+          latitude: latitude === null ? '' : String(latitude),
+          longitude: longitude === null ? '' : String(longitude),
+        },
+      });
+    } catch (error) {
+      setAddressError(error instanceof Error ? error.message : 'Unable to prepare your service request.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -86,46 +163,58 @@ export default function Report() {
 
         <View style={styles.form}>
           <Text style={styles.label}>What kind of help do you need?</Text>
-          <View style={styles.typeGrid}>
-            {issueTypes.map((item) => {
-              const selected = type.toLowerCase() === item.label.toLowerCase();
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  key={item.label}
-                  onPress={() => setType(item.label)}
-                  style={({ pressed }) => [
-                    styles.typeChip,
-                    selected && styles.typeChipSelected,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <MaterialIcons
-                    name={item.icon}
-                    size={17}
-                    color={selected ? Colors.light.text : Colors.light.textSecondary}
-                  />
-                  <Text style={[styles.typeChipText, selected && styles.typeChipTextSelected]}>
-                    {item.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={styles.label}>Issue type</Text>
-          <TextInput
-            accessibilityLabel="Issue type"
-            maxLength={60}
-            onChangeText={setType}
-            placeholder="For example, a leaking kitchen tap"
-            placeholderTextColor={Colors.light.textSecondary}
-            returnKeyType="next"
-            style={[styles.input, typeError && styles.inputError]}
-            value={type}
-          />
-          {typeError ? <Text style={styles.errorText}>Please enter an issue type.</Text> : null}
+          {categoriesLoading && categories.length === 0 ? (
+            <View style={styles.categoryStatus}>
+              <ActivityIndicator color={Colors.light.backgroundSelected} />
+              <Text style={styles.addressHelper}>Loading available services…</Text>
+            </View>
+          ) : categoriesError && categories.length === 0 ? (
+            <View style={styles.categoryStatus}>
+              <Text accessibilityRole="alert" style={styles.errorText}>{categoriesError}</Text>
+              <Pressable accessibilityRole="button" onPress={() => { void refreshCategories(); }}>
+                <Text style={styles.addAddressText}>Retry loading services</Text>
+              </Pressable>
+            </View>
+          ) : categories.length === 0 ? (
+            <Text style={styles.errorText}>No services are currently available.</Text>
+          ) : (
+            <View style={styles.typeGrid}>
+              {categories.map((item) => {
+                const selected = selectedCategory === item.name;
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    key={item.id}
+                    onPress={() => setType(item.name)}
+                    style={({ pressed }) => [
+                      styles.typeChip,
+                      selected && styles.typeChipSelected,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <MaterialIcons
+                      name={getServiceCategoryIcon(item.name)}
+                      size={17}
+                      color={selected ? Colors.light.text : Colors.light.textSecondary}
+                    />
+                    <Text style={[styles.typeChipText, selected && styles.typeChipTextSelected]}>
+                      {item.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+          {categoriesError && categories.length > 0 ? (
+            <View style={styles.categoryError}>
+              <Text accessibilityRole="alert" style={styles.errorText}>{categoriesError}</Text>
+              <Pressable accessibilityRole="button" onPress={() => { void refreshCategories(); }}>
+                <Text style={styles.addAddressText}>Refresh services</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {typeError ? <Text style={styles.errorText}>Select an available service.</Text> : null}
 
           <View style={styles.descriptionLabel}>
             <Text style={styles.label}>Describe the problem</Text>
@@ -147,6 +236,139 @@ export default function Report() {
           ) : (
             <Text style={styles.helperText}>Avoid sharing personal or sensitive information.</Text>
           )}
+
+          <View style={styles.addressHeader}>
+            <Text style={styles.sectionTitle}>Where should the technician visit?</Text>
+            {address ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setAddressDraftDirty(true);
+                  if (usingAlternateAddress) {
+                    setUsingAlternateAddress(false);
+                    setAddressLine(address.address_line);
+                    setSocietyName(address.society_name ?? '');
+                    setFlatNumber(address.flat_number ?? '');
+                    setDistrictId(address.district_id);
+                    setStateName(districts.find((item) => item.id === address.district_id)?.state_name ?? '');
+                    setAddressCoordinates({ latitude: address.latitude, longitude: address.longitude });
+                  } else {
+                    setUsingAlternateAddress(true);
+                    setAddressLine('');
+                    setSocietyName('');
+                    setFlatNumber('');
+                    const matchedDistrict = districts.find((item) => (
+                      item.district_name.toLowerCase() === currentDistrict?.toLowerCase()
+                    ));
+                    setStateName(matchedDistrict?.state_name ?? '');
+                    setDistrictId(matchedDistrict?.id ?? '');
+                    setAddressCoordinates({ latitude: null, longitude: null });
+                  }
+                }}
+              >
+                <Text style={styles.addAddressText}>
+                  {usingAlternateAddress ? 'Use profile address' : 'Use another address'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <Text style={styles.addressSyncStatus}>
+            {realtimeConnected
+              ? 'Address data is live'
+              : realtimeError
+                ? 'Live updates unavailable'
+                : 'Connecting to live address updates…'}
+          </Text>
+          <Text style={styles.addressHelper}>
+            {address
+              ? usingAlternateAddress
+                ? 'This address is for this request only. Your Profile address will not change.'
+                : 'Your Profile address is the default. You can use another address for this request without changing it.'
+              : 'Enter the address for this request. It will not be saved as your Profile address.'}
+          </Text>
+
+          {addressLoading ? (
+            <View style={styles.addressLoading}>
+              <ActivityIndicator color={Colors.light.backgroundSelected} />
+              <Text style={styles.addressHelper}>Loading your address and districts…</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.label}>Address</Text>
+              <TextInput
+                accessibilityLabel="Address"
+                autoCapitalize="words"
+                maxLength={500}
+                onChangeText={(value) => {
+                  setAddressDraftDirty(true);
+                  setAddressLine(value);
+                }}
+                placeholder="House number, street, and area"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={[styles.input, addressLineError && styles.inputError]}
+                value={addressLine}
+              />
+              {addressLineError ? <Text style={styles.errorText}>Enter your street address.</Text> : null}
+
+              <StateDistrictPicker
+                districts={districts}
+                districtError={districtError}
+                districtId={districtId}
+                onDistrictChange={(value) => {
+                  setAddressDraftDirty(true);
+                  setDistrictId(value);
+                }}
+                onStateChange={(nextStateId) => {
+                  setAddressDraftDirty(true);
+                  setStateName(nextStateId);
+                  setDistrictId('');
+                }}
+                stateError={stateError}
+                stateName={stateName}
+                states={states}
+              />
+
+              <Text style={styles.label}>Society / Apartment (optional)</Text>
+              <TextInput
+                accessibilityLabel="Society or apartment"
+                autoCapitalize="words"
+                maxLength={160}
+                onChangeText={(value) => {
+                  setAddressDraftDirty(true);
+                  setSocietyName(value);
+                }}
+                placeholder="Society or apartment name"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={societyName}
+              />
+
+              <Text style={styles.label}>Flat / House number (optional)</Text>
+              <TextInput
+                accessibilityLabel="Flat or house number"
+                autoCapitalize="characters"
+                maxLength={80}
+                onChangeText={(value) => {
+                  setAddressDraftDirty(true);
+                  setFlatNumber(value);
+                }}
+                placeholder="Flat or house number"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={flatNumber}
+              />
+            </>
+          )}
+          {addressSyncError || realtimeError ? (
+            <View>
+              <Text accessibilityRole="alert" style={styles.errorText}>
+                {addressError || addressSyncError || realtimeError}
+              </Text>
+              <Pressable accessibilityRole="button" onPress={() => { void refreshAddressData(); }}>
+                <Text style={styles.addAddressText}>Refresh address data</Text>
+              </Pressable>
+            </View>
+          ) : addressError ? <Text accessibilityRole="alert" style={styles.errorText}>{addressError}</Text> : null}
 
           <View style={styles.locationStatus}>
             <MaterialIcons
@@ -176,13 +398,16 @@ export default function Report() {
         <Pressable
           accessibilityRole="button"
           onPress={onSubmit}
-          disabled={locationLoading}
-          style={({ pressed }) => [styles.submit, pressed && styles.pressed]}
+          disabled={locationLoading || addressLoading || saving}
+          style={({ pressed }) => [styles.submit, pressed && styles.pressed, (locationLoading || addressLoading || saving) && styles.submitDisabled]}
         >
-          <Text style={styles.submitText}>{locationLoading ? 'Getting location...' : 'Find technicians'}</Text>
-          <MaterialIcons name={locationLoading ? 'my-location' : 'arrow-forward'} size={20} color={Colors.light.text} />
+          <Text style={styles.submitText}>
+            {saving ? 'Preparing request…' : addressLoading ? 'Loading address…' : locationLoading ? 'Getting location...' : 'Find technicians'}
+          </Text>
+          <MaterialIcons name={saving || locationLoading ? 'my-location' : 'arrow-forward'} size={20} color={Colors.light.text} />
         </Pressable>
       </View>
+
     </KeyboardAvoidingView>
   );
 }
@@ -203,6 +428,14 @@ const styles = StyleSheet.create({
   stepLine: { width: 28, height: 1, marginHorizontal: 7, backgroundColor: '#64748B' },
   stepCaption: { marginLeft: 10, color: '#D6DFEA', fontSize: 12 },
   form: { paddingHorizontal: 20, paddingTop: 24 },
+  sectionTitle: { color: Colors.light.text, fontSize: 16, fontWeight: '700' },
+  addressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
+  addAddressText: { color: Colors.light.backgroundSelected, fontSize: 12, fontWeight: '700' },
+  addressSyncStatus: { marginTop: -3, marginBottom: 8, color: Colors.light.textSecondary, fontSize: 11 },
+  addressHelper: { marginBottom: 15, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
+  addressLoading: { flexDirection: 'row', alignItems: 'center', gap: 9, marginVertical: 12 },
+  categoryStatus: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 20 },
+  categoryError: { marginTop: -12, marginBottom: 14 },
   label: { marginBottom: 9, color: Colors.light.text, fontSize: 14, fontWeight: '700' },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 22 },
   typeChip: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 20, backgroundColor: Colors.light.backgroundElement },
@@ -223,6 +456,7 @@ const styles = StyleSheet.create({
   privacyText: { flex: 1, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D8E0E9', backgroundColor: Colors.light.background },
   submit: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 13, backgroundColor: Colors.light.backgroundSelected },
+  submitDisabled: { opacity: 0.65 },
   submitText: { color: Colors.light.text, fontSize: 15, fontWeight: '700' },
   pressed: { opacity: 0.82 },
 });

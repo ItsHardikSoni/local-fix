@@ -14,6 +14,7 @@ import { useUser } from './UserContext';
 type LocationContextValue = {
   location: Location.LocationObject | null;
   locationLabel: string | null;
+  district: string | null;
   locationLoading: boolean;
   locationError: string | null;
   refreshLocation: () => Promise<Location.LocationObject | null>;
@@ -41,6 +42,7 @@ function LocationSessionProvider({
 }) {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  const [district, setDistrict] = useState<string | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const requestRef = useRef<Promise<Location.LocationObject | null> | null>(null);
@@ -79,18 +81,22 @@ function LocationSessionProvider({
         const fallbackLabel = `${coordinates.latitude.toFixed(4)}, ${coordinates.longitude.toFixed(4)}`;
         const geocodeKey = `${coordinates.latitude.toFixed(3)},${coordinates.longitude.toFixed(3)}`;
         if (geocodedCoordinatesRef.current !== geocodeKey) {
-          geocodedCoordinatesRef.current = geocodeKey;
+          setDistrict(null);
           try {
             const [address] = await Location.reverseGeocodeAsync({
               latitude: coordinates.latitude,
               longitude: coordinates.longitude,
             });
+            geocodedCoordinatesRef.current = geocodeKey;
+            const currentDistrict = address?.district || address?.city || address?.subregion || null;
             const city = address?.city || address?.district || address?.subregion;
             const region = address?.region;
+            setDistrict(currentDistrict);
             setLocationLabel(city && region && city !== region
               ? `${city}, ${region}`
               : city || region || address?.country || fallbackLabel);
           } catch {
+            setDistrict(null);
             setLocationLabel(fallbackLabel);
           }
         }
@@ -127,6 +133,7 @@ function LocationSessionProvider({
     <LocationContext.Provider value={{
       location,
       locationLabel,
+      district,
       locationLoading,
       locationError,
       refreshLocation,
