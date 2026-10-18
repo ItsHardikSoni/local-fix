@@ -29,8 +29,8 @@ const getGreeting = () => {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { district, session, profile } = useUser();
-  const { locationLabel, locationLoading, locationError, refreshLocation } = useLocation();
+  const { session, profile } = useUser();
+  const { district, locationLabel, locationLoading, locationError, refreshLocation } = useLocation();
   const [showWorkerAlert, setShowWorkerAlert] = useState(false);
   const metadataName = session?.user.user_metadata?.full_name;
   const userName = profile?.full_name
@@ -127,7 +127,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.quickCopy}>
             <Text style={styles.quickTitle}>Browse local technicians</Text>
-            <Text style={styles.quickSubtitle}>See trusted professionals in {district}</Text>
+            <Text style={styles.quickSubtitle}>See trusted professionals in {district || 'your area'}</Text>
           </View>
           <MaterialIcons name="chevron-right" size={24} color={Colors.light.textSecondary} />
         </Pressable>

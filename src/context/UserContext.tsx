@@ -63,8 +63,6 @@ const ensureProfileExists = async (user: User): Promise<AuthErrorMessage | null>
 };
 
 type UserContextType = {
-  district: string;
-  setDistrict: (d: string) => void;
   session: Session | null;
   authLoading: boolean;
   profile: UserProfile | null;
@@ -81,14 +79,9 @@ type UserContextType = {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-export const UserProvider = ({
-  children,
-  district: initialDistrict,
-}: {
+export const UserProvider = ({ children }: {
   children: ReactNode;
-  district: string;
 }) => {
-  const [district, setDistrict] = useState(initialDistrict);
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -353,8 +346,6 @@ export const UserProvider = ({
 
   return (
     <UserContext.Provider value={{
-      district,
-      setDistrict,
       session,
       authLoading,
       profile,

@@ -10,14 +10,14 @@ import {
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { technicians } from '../../data/technicians';
-import { useUser } from '../../context/UserContext';
+import { useLocation } from '../../context/LocationContext';
 import { Colors } from '../../constants/theme';
 
 const specialties = ['All', 'Plumber', 'Electrician', 'AC Technician'];
 
 export default function Technicians() {
   const router = useRouter();
-  const { district } = useUser();
+  const { district, locationLabel, locationLoading, locationError, refreshLocation } = useLocation();
   const { type: issueType, desc: issueDescription, latitude, longitude } = useLocalSearchParams<{
     type?: string;
     desc?: string;
@@ -33,7 +33,7 @@ export default function Technicians() {
   const filteredTechnicians = useMemo(() => {
     const query = search.trim().toLowerCase();
     return technicians
-      .filter((tech) => tech.district === district)
+      .filter((tech) => district !== null && tech.district.toLowerCase() === district.toLowerCase())
       .filter((tech) => specialty === 'All' || tech.specialty === specialty)
       .filter((tech) => !favoritesOnly || favoriteIds.includes(tech.id))
       .filter((tech) => !query || `${tech.name} ${tech.specialty}`.toLowerCase().includes(query))
@@ -67,10 +67,21 @@ export default function Technicians() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <View style={styles.locationPill}>
+          <Pressable
+            accessibilityLabel="Refresh current location"
+            accessibilityRole="button"
+            onPress={() => { void refreshLocation(); }}
+            style={styles.locationPill}
+          >
             <MaterialIcons name="location-on" size={16} color={Colors.light.backgroundSelected} />
-            <Text style={styles.locationText}>{district}, Bihar</Text>
-          </View>
+            <Text numberOfLines={1} style={styles.locationText}>
+              {locationLabel || (locationLoading
+                ? 'Finding your location…'
+                : locationError
+                  ? 'Tap to enable location'
+                  : 'Location unavailable')}
+            </Text>
+          </Pressable>
           <Text style={styles.title}>Find your local expert</Text>
           <Text style={styles.subtitle}>Trusted home service professionals, close to home.</Text>
           <View style={styles.searchBox}>
@@ -208,19 +219,36 @@ export default function Technicians() {
             <View style={styles.emptyIcon}>
               <MaterialIcons name={favoritesOnly ? 'favorite-border' : 'search-off'} size={28} color={Colors.light.textSecondary} />
             </View>
-            <Text style={styles.emptyTitle}>No matches just yet</Text>
-            <Text style={styles.emptyText}>Try another search or service filter to see available professionals.</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setSearch('');
-                setSpecialty('All');
-                setFavoritesOnly(false);
-              }}
-              style={styles.resetButton}
-            >
-              <Text style={styles.resetText}>Clear filters</Text>
-            </Pressable>
+            <Text style={styles.emptyTitle}>
+              {!district ? 'Location needed' : 'No matches just yet'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {!district
+                ? 'Allow location access to find professionals in your area.'
+                : 'Try another search or service filter to see available professionals.'}
+            </Text>
+            {!district ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={locationLoading}
+                onPress={() => { void refreshLocation(); }}
+                style={styles.resetButton}
+              >
+                <Text style={styles.resetText}>{locationLoading ? 'Finding location…' : 'Try again'}</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setSearch('');
+                  setSpecialty('All');
+                  setFavoritesOnly(false);
+                }}
+                style={styles.resetButton}
+              >
+                <Text style={styles.resetText}>Clear filters</Text>
+              </Pressable>
+            )}
           </View>
         ) : null}
       </ScrollView>

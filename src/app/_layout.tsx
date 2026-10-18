@@ -76,7 +76,7 @@ function AppEntry() {
 export default function Layout() {
   return (
     <SafeAreaProvider>
-      <UserProvider district="Muzaffarpur">
+      <UserProvider>
         <LocationProvider>
           <AppEntry />
         </LocationProvider>
