@@ -1,5 +1,4 @@
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -13,14 +12,34 @@ import { Colors } from '../constants/theme';
 
 function AppEntry() {
   const { session, authLoading } = useUser();
-  const [splashElapsed, setSplashElapsed] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const previousUserId = useRef<string | null>(null);
+  const initialAuthResolved = useRef(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setSplashElapsed(true), 3000);
-    return () => clearTimeout(timer);
-  }, []);
+    if (authLoading) return;
 
-  const content = !splashElapsed ? (
+    const userId = session?.user.id ?? null;
+    if (!initialAuthResolved.current) {
+      previousUserId.current = userId;
+      initialAuthResolved.current = true;
+      return;
+    }
+
+    if (previousUserId.current !== userId) {
+      previousUserId.current = userId;
+      setShowSplash(true);
+    }
+  }, [authLoading, session?.user.id]);
+
+  useEffect(() => {
+    if (!showSplash) return;
+
+    const timer = setTimeout(() => setShowSplash(false), 3000);
+    return () => clearTimeout(timer);
+  }, [showSplash]);
+
+  const content = showSplash ? (
     <SplashScreen />
   ) : authLoading ? (
     <LoadingScreen />
