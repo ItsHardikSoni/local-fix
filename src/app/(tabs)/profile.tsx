@@ -533,6 +533,41 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Requests</Text>
+        </View>
+        <View style={styles.helpCard}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('../../my-requests')}
+            style={({ pressed }) => [styles.helpRow, pressed && styles.helpRowPressed]}
+          >
+            <View style={styles.helpIcon}>
+              <MaterialIcons name="receipt-long" size={19} color={Colors.light.backgroundSelected} />
+            </View>
+            <View style={styles.helpCopy}>
+              <Text style={styles.helpTitle}>My service history</Text>
+              <Text style={styles.helpDetail}>Track requests and review completed work</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color={Colors.light.textSecondary} />
+          </Pressable>
+          <View style={styles.divider} />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/worker-requests')}
+            style={({ pressed }) => [styles.helpRow, pressed && styles.helpRowPressed]}
+          >
+            <View style={styles.helpIcon}>
+              <MaterialIcons name="inbox" size={19} color={Colors.light.backgroundSelected} />
+            </View>
+            <View style={styles.helpCopy}>
+              <Text style={styles.helpTitle}>Worker inbox</Text>
+              <Text style={styles.helpDetail}>Review requests matching your verified service area</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color={Colors.light.textSecondary} />
+          </Pressable>
+        </View>
+
+        <View style={styles.sectionHeading}>
           <Text style={styles.sectionTitle}>Help & information</Text>
         </View>
         <View style={styles.helpCard}>

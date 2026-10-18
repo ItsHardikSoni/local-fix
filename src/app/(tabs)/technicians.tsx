@@ -34,6 +34,9 @@ export default function Technicians() {
     districtName: requestedDistrictName,
     stateName: requestedStateName,
     desc: issueDescription,
+    addressLine,
+    societyName,
+    flatNumber,
     latitude,
     longitude,
   } = useLocalSearchParams<{
@@ -43,6 +46,9 @@ export default function Technicians() {
     districtName?: string;
     stateName?: string;
     desc?: string;
+    addressLine?: string;
+    societyName?: string;
+    flatNumber?: string;
     latitude?: string;
     longitude?: string;
   }>();
@@ -116,6 +122,9 @@ export default function Technicians() {
         districtName: targetDistrictName ?? '',
         stateName: typeof requestedStateName === 'string' ? requestedStateName : '',
         desc: typeof issueDescription === 'string' ? issueDescription : '',
+        addressLine: typeof addressLine === 'string' ? addressLine : '',
+        societyName: typeof societyName === 'string' ? societyName : '',
+        flatNumber: typeof flatNumber === 'string' ? flatNumber : '',
         latitude: typeof latitude === 'string' ? latitude : '',
         longitude: typeof longitude === 'string' ? longitude : '',
       },
@@ -314,7 +323,7 @@ export default function Technicians() {
               <View style={styles.stats}>
                 <View style={styles.ratingPill}>
                   <MaterialIcons name="star" size={15} color="#C27B00" />
-                  <Text style={styles.ratingText}>{worker.averageRating.toFixed(1)}/5</Text>
+                  <Text style={styles.ratingText}>{worker.averageRating.toFixed(1)}/5 · {worker.reviewCount} reviews</Text>
                 </View>
                 <Text style={styles.statDivider}>·</Text>
                 <Text style={styles.statText}>{worker.completedJobsCount} jobs</Text>
@@ -420,7 +429,7 @@ const styles = StyleSheet.create({
   verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 5 },
   verifiedText: { color: '#24734A', fontSize: 10, fontWeight: '700' },
   favoriteButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
-  stats: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 15 },
+  stats: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 15 },
   ratingPill: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8, backgroundColor: '#FFF2DE' },
   ratingText: { color: Colors.light.text, fontSize: 12, fontWeight: '700' },
   statDivider: { color: '#A0AAB8', fontSize: 15 },
