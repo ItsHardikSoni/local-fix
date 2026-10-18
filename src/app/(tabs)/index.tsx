@@ -116,7 +116,9 @@ export default function HomeScreen() {
           ))}
         </View>
 
+        <View style={styles.sectionHeading}>
         <Text style={styles.sectionTitle}>Quick access</Text>
+        </View>
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push('/technicians')}
@@ -219,7 +221,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginHorizontal: 20,
-    marginBottom: 26,
   },
   serviceCard: {
     width: '48%',
