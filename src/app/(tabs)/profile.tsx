@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
@@ -12,10 +13,18 @@ import { Colors } from '../../constants/theme';
 import { useUser } from '../../context/UserContext';
 import ThemedAlert from '../../components/ui/themed-alert';
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE_PATTERN = /^\d{10}$/;
+
 export default function ProfileScreen() {
-  const { session, profile, profileLoading, profileError, signOut } = useUser();
+  const { session, profile, profileLoading, profileError, signOut, updateProfile } = useUser();
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [draftFullName, setDraftFullName] = useState('');
+  const [draftEmail, setDraftEmail] = useState('');
+  const [draftPhone, setDraftPhone] = useState('');
   const [showSignOutAlert, setShowSignOutAlert] = useState(false);
   const user = session?.user;
   const metadataFullName = typeof user?.user_metadata?.full_name === 'string'
@@ -28,6 +37,7 @@ export default function ProfileScreen() {
   const phone = profile?.phone || metadataPhone || 'Not provided';
   const email = profile?.email || user?.email || 'No email available';
   const emailVerified = Boolean(user?.email_confirmed_at);
+  const pendingEmail = typeof user?.new_email === 'string' ? user.new_email : null;
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
     : null;
@@ -49,6 +59,55 @@ export default function ProfileScreen() {
       setErrorMessage('Unable to sign out. Please try again.');
       setBusy(false);
       setShowSignOutAlert(false);
+    }
+  };
+
+  const startEditing = () => {
+    setDraftFullName(fullName === 'LocalFix user' ? '' : fullName);
+    setDraftEmail(user?.email ?? email);
+    setDraftPhone(profile?.phone ?? metadataPhone ?? '');
+    setErrorMessage('');
+    setSuccessMessage('');
+    setEditing(true);
+  };
+
+  const handleSaveProfile = async () => {
+    const normalizedName = draftFullName.trim();
+    const normalizedEmail = draftEmail.trim();
+    const normalizedPhone = draftPhone.replace(/\D/g, '');
+
+    if (!normalizedName) {
+      setErrorMessage('Please enter your name.');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+    if (normalizedPhone && !PHONE_PATTERN.test(normalizedPhone)) {
+      setErrorMessage('Enter a 10-digit phone number or leave it blank.');
+      return;
+    }
+
+    setBusy(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      const result = await updateProfile(normalizedName, normalizedEmail, normalizedPhone);
+      if (result.error) {
+        setErrorMessage(result.error.message);
+        return;
+      }
+
+      setEditing(false);
+      setSuccessMessage(result.emailConfirmationRequired
+        ? `Profile saved. Check ${normalizedEmail} for the confirmation link to finish changing your email.`
+        : 'Your profile has been updated.');
+    } catch (error) {
+      const details = error instanceof Error ? error.message : 'Unknown error';
+      setErrorMessage(`Unable to update your profile: ${details}`);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -85,28 +144,90 @@ export default function ProfileScreen() {
           </View>
         ) : null}
         {errorMessage ? <Text accessibilityRole="alert" style={styles.error}>{errorMessage}</Text> : null}
+        {successMessage ? <Text accessibilityRole="summary" style={styles.success}>{successMessage}</Text> : null}
 
-        <Text style={styles.sectionTitle}>Contact information</Text>
+        <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Contact information</Text>
+          {!editing ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy || profileLoading}
+              onPress={startEditing}
+              style={({ pressed }) => [styles.editButton, pressed && styles.editButtonPressed]}
+            >
+              <MaterialIcons name="edit" size={16} color={Colors.light.backgroundSelected} />
+              <Text style={styles.editButtonText}>Edit</Text>
+            </Pressable>
+          ) : null}
+        </View>
         <View style={styles.detailsCard}>
+          <View style={styles.detailRow}>
+            <View style={styles.detailIcon}>
+              <MaterialIcons name="person-outline" size={19} color={Colors.light.backgroundSelected} />
+            </View>
+            <View style={styles.detailCopy}>
+              {editing ? (
+                <>
+                  <Text style={styles.label}>Full name</Text>
+                  <TextInput
+                    accessibilityLabel="Full name"
+                    autoCapitalize="words"
+                    editable={!busy}
+                    onChangeText={setDraftFullName}
+                    placeholder="Your full name"
+                    placeholderTextColor={Colors.light.textSecondary}
+                    style={styles.input}
+                    value={draftFullName}
+                  />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.label}>Full name</Text>
+                  <Text selectable style={styles.value}>{fullName}</Text>
+                </>
+              )}
+            </View>
+          </View>
+          <View style={styles.divider} />
           <View style={styles.detailRow}>
             <View style={styles.detailIcon}>
               <MaterialIcons name="mail-outline" size={19} color={Colors.light.backgroundSelected} />
             </View>
             <View style={styles.detailCopy}>
               <Text style={styles.label}>Email address</Text>
-              <Text selectable style={styles.value}>{email}</Text>
+              {editing ? (
+                <TextInput
+                  accessibilityLabel="Email address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  editable={!busy}
+                  keyboardType="email-address"
+                  onChangeText={setDraftEmail}
+                  placeholder="you@example.com"
+                  placeholderTextColor={Colors.light.textSecondary}
+                  style={styles.input}
+                  value={draftEmail}
+                />
+              ) : (
+                <Text selectable style={styles.value}>{email}</Text>
+              )}
             </View>
-            <View style={[styles.status, emailVerified ? styles.statusSuccess : styles.statusPending]}>
-              <MaterialIcons
-                name={emailVerified ? 'check-circle' : 'schedule'}
-                size={14}
-                color={emailVerified ? '#24734A' : '#9A6700'}
-              />
-              <Text style={[styles.statusText, emailVerified ? styles.statusTextSuccess : styles.statusTextPending]}>
-                {emailVerified ? 'Verified' : 'Pending'}
-              </Text>
-            </View>
+            {!editing ? (
+              <View style={[styles.status, emailVerified && !pendingEmail ? styles.statusSuccess : styles.statusPending]}>
+                <MaterialIcons
+                  name={emailVerified && !pendingEmail ? 'check-circle' : 'schedule'}
+                  size={14}
+                  color={emailVerified && !pendingEmail ? '#24734A' : '#9A6700'}
+                />
+                <Text style={[styles.statusText, emailVerified && !pendingEmail ? styles.statusTextSuccess : styles.statusTextPending]}>
+                  {pendingEmail ? 'Change pending' : emailVerified ? 'Verified' : 'Pending'}
+                </Text>
+              </View>
+            ) : null}
           </View>
+          {pendingEmail && !editing ? (
+            <Text style={styles.pendingEmail}>Verify {pendingEmail} to complete your email change.</Text>
+          ) : null}
           <View style={styles.divider} />
           <View style={styles.detailRow}>
             <View style={styles.detailIcon}>
@@ -114,10 +235,54 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.detailCopy}>
               <Text style={styles.label}>Phone number</Text>
-              <Text selectable style={styles.value}>{phone}</Text>
+              {editing ? (
+                <TextInput
+                  accessibilityLabel="Phone number"
+                  autoComplete="tel"
+                  editable={!busy}
+                  keyboardType="phone-pad"
+                  maxLength={15}
+                  onChangeText={setDraftPhone}
+                  placeholder="10-digit phone number"
+                  placeholderTextColor={Colors.light.textSecondary}
+                  style={styles.input}
+                  value={draftPhone}
+                />
+              ) : (
+                <Text selectable style={styles.value}>{phone}</Text>
+              )}
             </View>
           </View>
         </View>
+
+        {editing ? (
+          <View style={styles.editActions}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={() => {
+                setEditing(false);
+                setErrorMessage('');
+              }}
+              style={({ pressed }) => [styles.cancelButton, pressed && styles.buttonPressed]}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={handleSaveProfile}
+              style={({ pressed }) => [styles.saveButton, pressed && styles.buttonPressed, busy && styles.saveButtonDisabled]}
+            >
+              {busy ? <ActivityIndicator color={Colors.light.text} /> : (
+                <>
+                  <MaterialIcons name="check" size={18} color={Colors.light.text} />
+                  <Text style={styles.saveText}>Save changes</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.securityNote}>
           <MaterialIcons name="shield" size={20} color={Colors.light.backgroundSelected} />
@@ -172,13 +337,20 @@ const styles = StyleSheet.create({
   loadingText: { color: Colors.light.textSecondary, fontSize: 12 },
   errorCard: { flexDirection: 'row', alignItems: 'center', gap: 9, marginHorizontal: 20, marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: '#FEF3F2' },
   error: { flex: 1, color: '#B42318', fontSize: 13, lineHeight: 18 },
-  sectionTitle: { marginHorizontal: 20, marginTop: 24, marginBottom: 11, color: Colors.light.text, fontSize: 17, fontWeight: '700' },
+  success: { marginHorizontal: 20, marginTop: 14, color: '#24734A', fontSize: 13, lineHeight: 18 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 24, marginBottom: 11 },
+  sectionTitle: { color: Colors.light.text, fontSize: 17, fontWeight: '700' },
+  editButton: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#FFF2DE' },
+  editButtonPressed: { opacity: 0.8 },
+  editButtonText: { color: Colors.light.backgroundSelected, fontSize: 13, fontWeight: '700' },
   detailsCard: { marginHorizontal: 20, paddingHorizontal: 15, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
   detailRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 13 },
   detailIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFF2DE' },
   detailCopy: { flex: 1 },
   label: { color: Colors.light.textSecondary, fontSize: 11 },
   value: { marginTop: 5, color: Colors.light.text, fontSize: 14, fontWeight: '600' },
+  input: { minHeight: 42, marginTop: 4, paddingHorizontal: 10, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 9, color: Colors.light.text, fontSize: 14 },
+  pendingEmail: { marginHorizontal: 49, marginBottom: 12, color: '#9A6700', fontSize: 11, lineHeight: 16 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 10 },
   statusSuccess: { backgroundColor: '#E8F5EC' },
   statusPending: { backgroundColor: '#FFF4D6' },
@@ -186,6 +358,13 @@ const styles = StyleSheet.create({
   statusTextSuccess: { color: '#24734A' },
   statusTextPending: { color: '#9A6700' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E8EDF2' },
+  editActions: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginTop: 14 },
+  cancelButton: { minHeight: 48, flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 12, backgroundColor: Colors.light.backgroundElement },
+  cancelText: { color: Colors.light.textSecondary, fontSize: 14, fontWeight: '700' },
+  saveButton: { minHeight: 48, flex: 1.5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, backgroundColor: Colors.light.backgroundSelected },
+  saveButtonDisabled: { opacity: 0.7 },
+  saveText: { color: Colors.light.text, fontSize: 14, fontWeight: '700' },
+  buttonPressed: { opacity: 0.8 },
   securityNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginHorizontal: 20, marginTop: 16, padding: 14, borderRadius: 14, backgroundColor: '#FFF9EE' },
   securityCopy: { flex: 1 },
   securityTitle: { color: Colors.light.text, fontSize: 13, fontWeight: '700' },

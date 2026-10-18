@@ -10,6 +10,7 @@ import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useUser } from '../../context/UserContext';
+import { useLocation } from '../../context/LocationContext';
 import ThemedAlert from '../../components/ui/themed-alert';
 
 const services = [
@@ -29,6 +30,7 @@ const getGreeting = () => {
 export default function HomeScreen() {
   const router = useRouter();
   const { district, session, profile } = useUser();
+  const { locationLabel, locationLoading, locationError, refreshLocation } = useLocation();
   const [showWorkerAlert, setShowWorkerAlert] = useState(false);
   const metadataName = session?.user.user_metadata?.full_name;
   const userName = profile?.full_name
@@ -51,10 +53,21 @@ export default function HomeScreen() {
       >
         <View style={styles.hero}>
           <View style={styles.heroTopRow}>
-            <View style={styles.locationPill}>
+            <Pressable
+              accessibilityLabel="Refresh current location"
+              accessibilityRole="button"
+              onPress={() => { void refreshLocation(); }}
+              style={styles.locationPill}
+            >
               <MaterialIcons name="location-on" size={16} color={Colors.light.backgroundSelected} />
-              <Text style={styles.locationText}>{district}, Bihar</Text>
-            </View>
+              <Text numberOfLines={1} style={styles.locationText}>
+                {locationLabel || (locationLoading
+                  ? 'Finding location…'
+                  : locationError
+                    ? 'Tap to enable location'
+                    : 'Location unavailable')}
+              </Text>
+            </Pressable>
             <Pressable
               accessibilityLabel="Open profile"
               accessibilityRole="button"
@@ -165,6 +178,7 @@ const styles = StyleSheet.create({
   },
   heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   locationPill: {
+    maxWidth: '85%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -173,7 +187,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  locationText: { color: '#E5EAF1', fontSize: 13, fontWeight: '500' },
+  locationText: { flexShrink: 1, color: '#E5EAF1', fontSize: 13, fontWeight: '500' },
   profileButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   greeting: { marginTop: 18, color: '#C8D2DF', fontSize: 17, fontWeight: '500' },
   name: { marginTop: 3, color: Colors.light.backgroundElement, fontSize: 30, fontWeight: '800' },

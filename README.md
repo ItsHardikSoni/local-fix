@@ -31,6 +31,10 @@ Run [`supabase/profiles.sql`](supabase/profiles.sql) in the Supabase SQL editor 
 
 Email/password sign-up and sign-in use Supabase Auth. Supabase stores and verifies passwords securely; this app never saves or fetches passwords itself. AsyncStorage persists the Supabase session so returning users can go straight to Home. Do not put a Supabase `service_role` key in the app.
 
+When a signed-in user opens LocalFix, the app requests foreground location access and reads their current coordinates. A service request refreshes that location and carries the coordinates through the technician selection and request review screens. Location access is only used while the app is in use; the operating system controls permission and device location settings.
+
+The Home screen displays the reverse-geocoded current location (or coordinates when an address is unavailable). Users can edit their name, email, and phone on Profile; name and phone are stored in Supabase Auth user metadata and the `profiles` table. Email changes use Supabase Auth's confirmation flow, so the sign-in email changes after the new address is confirmed.
+
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
 ## Get a fresh project

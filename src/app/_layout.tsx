@@ -7,6 +7,7 @@ import ThemeProvider from '../components/ThemeProvider';
 import AuthScreen from '../components/auth-screen';
 import SplashScreen from '../components/splash-screen';
 import { UserProvider, useUser } from '../context/UserContext';
+import { LocationProvider } from '../context/LocationContext';
 import { Colors } from '../constants/theme';
 
 function AppEntry() {
@@ -55,7 +56,9 @@ export default function Layout() {
   return (
     <SafeAreaProvider>
       <UserProvider district="Muzaffarpur">
-        <AppEntry />
+        <LocationProvider>
+          <AppEntry />
+        </LocationProvider>
       </UserProvider>
     </SafeAreaProvider>
   );

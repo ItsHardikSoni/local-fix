@@ -12,6 +12,7 @@ import {
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
+import { useLocation } from '../../context/LocationContext';
 
 const issueTypes = [
   { label: 'Water leak', icon: 'water-drop' as const },
@@ -22,6 +23,7 @@ const issueTypes = [
 
 export default function Report() {
   const router = useRouter();
+  const { location, locationLoading, locationError, refreshLocation } = useLocation();
   const { type: initialType } = useLocalSearchParams<{ type?: string }>();
   const [type, setType] = useState('Water leak');
   const [desc, setDesc] = useState('');
@@ -36,13 +38,21 @@ export default function Report() {
   const typeError = attemptedSubmit && !type.trim();
   const descriptionError = attemptedSubmit && desc.trim().length < 8;
 
-  const onSubmit = () => {
+  const onSubmit = async () => {
     setAttemptedSubmit(true);
     if (!type.trim() || desc.trim().length < 8) return;
 
+    const currentLocation = await refreshLocation();
+    if (!currentLocation) return;
+
     router.push({
       pathname: '/technicians',
-      params: { type: type.trim(), desc: desc.trim() },
+      params: {
+        type: type.trim(),
+        desc: desc.trim(),
+        latitude: String(currentLocation.coords.latitude),
+        longitude: String(currentLocation.coords.longitude),
+      },
     });
   };
 
@@ -138,9 +148,26 @@ export default function Report() {
             <Text style={styles.helperText}>Avoid sharing personal or sensitive information.</Text>
           )}
 
+          <View style={styles.locationStatus}>
+            <MaterialIcons
+              name={locationLoading ? 'my-location' : location ? 'location-on' : 'location-off'}
+              size={18}
+              color={locationError ? '#B42318' : Colors.light.backgroundSelected}
+            />
+            <Text style={[styles.locationStatusText, locationError && styles.locationStatusError]}>
+              {locationLoading
+                ? 'Getting your current location...'
+                : locationError
+                  ? locationError
+                  : location
+                    ? 'Your current location will be included with this request.'
+                    : 'Your current location is needed for this request.'}
+            </Text>
+          </View>
+
           <View style={styles.privacyNote}>
             <MaterialIcons name="lock-outline" size={18} color={Colors.light.backgroundSelected} />
-            <Text style={styles.privacyText}>Your request is only used to help match you with a technician.</Text>
+            <Text style={styles.privacyText}>Your location is shared with this service request to help connect you with a technician.</Text>
           </View>
         </View>
       </ScrollView>
@@ -149,10 +176,11 @@ export default function Report() {
         <Pressable
           accessibilityRole="button"
           onPress={onSubmit}
+          disabled={locationLoading}
           style={({ pressed }) => [styles.submit, pressed && styles.pressed]}
         >
-          <Text style={styles.submitText}>Find technicians</Text>
-          <MaterialIcons name="arrow-forward" size={20} color={Colors.light.text} />
+          <Text style={styles.submitText}>{locationLoading ? 'Getting location...' : 'Find technicians'}</Text>
+          <MaterialIcons name={locationLoading ? 'my-location' : 'arrow-forward'} size={20} color={Colors.light.text} />
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -188,6 +216,9 @@ const styles = StyleSheet.create({
   descriptionInput: { minHeight: 132, marginBottom: 7, lineHeight: 21 },
   helperText: { marginBottom: 16, color: Colors.light.textSecondary, fontSize: 12 },
   errorText: { marginTop: -10, marginBottom: 16, color: '#B42318', fontSize: 12, lineHeight: 17 },
+  locationStatus: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 14, padding: 13, borderRadius: 12, backgroundColor: '#EFF3F8' },
+  locationStatusText: { flex: 1, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
+  locationStatusError: { color: '#B42318' },
   privacyNote: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 13, borderRadius: 12, backgroundColor: '#FFF9EE' },
   privacyText: { flex: 1, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D8E0E9', backgroundColor: Colors.light.background },

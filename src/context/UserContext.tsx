@@ -3,6 +3,10 @@ import type { AuthError, Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 
 type AuthErrorMessage = Pick<AuthError, 'message'>;
+type ProfileUpdateResult = {
+  error: { message: string } | null;
+  emailConfirmationRequired: boolean;
+};
 
 export type UserProfile = {
   id: string;
@@ -68,6 +72,7 @@ type UserContextType = {
   profileError: string | null;
   signIn: (email: string, password: string) => Promise<AuthErrorMessage | null>;
   signOut: () => Promise<AuthErrorMessage | null>;
+  updateProfile: (fullName: string, email: string, phone: string) => Promise<ProfileUpdateResult>;
   signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{
     error: AuthErrorMessage | null;
     confirmationRequired: boolean;
@@ -238,6 +243,81 @@ export const UserProvider = ({
     return error;
   };
 
+  const updateProfile = async (
+    fullName: string,
+    email: string,
+    phone: string,
+  ): Promise<ProfileUpdateResult> => {
+    const currentUser = session?.user;
+    if (!currentUser) {
+      return { error: { message: 'You must be signed in to update your profile.' }, emailConfirmationRequired: false };
+    }
+    if (!supabaseConfigured) {
+      return {
+        error: { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' },
+        emailConfirmationRequired: false,
+      };
+    }
+
+    const normalizedEmail = email.trim();
+    const { data: authData, error: authError } = await supabase.auth.updateUser({
+      ...(normalizedEmail.toLowerCase() !== currentUser.email?.toLowerCase()
+        ? { email: normalizedEmail }
+        : {}),
+      data: {
+        full_name: fullName.trim(),
+        phone: phone.trim() || null,
+      },
+    });
+
+    if (authError) {
+      return { error: authError, emailConfirmationRequired: false };
+    }
+
+    const { data: updatedProfile, error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update({
+        full_name: fullName.trim(),
+        phone: phone.trim() || null,
+        email: authData.user.email ?? null,
+      })
+      .eq('id', currentUser.id)
+      .select('id, full_name, phone, email')
+      .maybeSingle();
+
+    if (profileUpdateError) {
+      return {
+        error: { message: `Authentication was updated, but the profile record could not be synchronized: ${profileUpdateError.message}` },
+        emailConfirmationRequired: false,
+      };
+    }
+    if (!updatedProfile) {
+      return {
+        error: { message: 'Authentication was updated, but your profile record could not be found.' },
+        emailConfirmationRequired: false,
+      };
+    }
+
+    const nextProfile = parseProfile(updatedProfile);
+    if (!nextProfile) {
+      return {
+        error: { message: 'Authentication was updated, but the profile data returned by the server is invalid.' },
+        emailConfirmationRequired: false,
+      };
+    }
+
+    setProfile(nextProfile);
+    setProfileError(null);
+
+    const emailConfirmationRequired = Boolean(
+      authData.user.new_email
+      && authData.user.new_email.toLowerCase() === normalizedEmail.toLowerCase()
+      && authData.user.email?.toLowerCase() !== normalizedEmail.toLowerCase(),
+    );
+
+    return { error: null, emailConfirmationRequired };
+  };
+
   const signUp = async (email: string, password: string, fullName: string, phone: string) => {
     if (!supabaseConfigured) {
       return {
@@ -277,6 +357,7 @@ export const UserProvider = ({
       profileError,
       signIn,
       signOut,
+      updateProfile,
       signUp,
     }}>
       {children}
