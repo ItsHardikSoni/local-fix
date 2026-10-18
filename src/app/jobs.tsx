@@ -1,29 +1,56 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useWorkerDirectory } from '../context/WorkerDirectoryContext';
+import { useUser } from '../context/UserContext';
 import { Colors } from '../constants/theme';
-import ThemedAlert from '../components/ui/themed-alert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { createServiceRequest } from '../lib/service-requests';
 
 export default function Job() {
   const router = useRouter();
-  const { workerId, type, desc, latitude, longitude } = useLocalSearchParams<{
+  const {
+    workerId,
+    type,
+    categoryId,
+    districtId,
+    districtName,
+    stateName,
+    desc,
+    addressLine,
+    societyName,
+    flatNumber,
+    latitude,
+    longitude,
+  } = useLocalSearchParams<{
     workerId?: string;
     type?: string;
+    categoryId?: string;
+    districtId?: string;
+    districtName?: string;
+    stateName?: string;
     desc?: string;
+    addressLine?: string;
+    societyName?: string;
+    flatNumber?: string;
     latitude?: string;
     longitude?: string;
   }>();
   const { workers, loading } = useWorkerDirectory();
-  const [showPaymentAlert, setShowPaymentAlert] = useState(false);
+  const { session } = useUser();
+  const [offerAmount, setOfferAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [requestCreated, setRequestCreated] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const worker = workers.find((item) => item.id === workerId);
   const issueType = typeof type === 'string' && type ? type : worker?.services[0]?.name;
   const description = typeof desc === 'string' ? desc : '';
@@ -32,11 +59,54 @@ export default function Job() {
   const longitudeValue = typeof longitude === 'string' ? Number(longitude) : NaN;
   const hasServiceLocation = typeof latitude === 'string' && latitude.trim() !== ''
     && typeof longitude === 'string' && longitude.trim() !== '';
-  const serviceLocation = hasServiceLocation
+  const requestCoordinates = hasServiceLocation
     && Number.isFinite(latitudeValue) && latitudeValue >= -90 && latitudeValue <= 90
     && Number.isFinite(longitudeValue) && longitudeValue >= -180 && longitudeValue <= 180
-    ? `${latitude}, ${longitude}`
-    : null;
+    ? { latitude: latitudeValue, longitude: longitudeValue }
+    : { latitude: null, longitude: null };
+  const requestAddress = [
+    typeof flatNumber === 'string' && flatNumber ? `House / flat ${flatNumber}` : '',
+    typeof societyName === 'string' ? societyName : '',
+    typeof addressLine === 'string' ? addressLine : '',
+  ].filter(Boolean).join(', ');
+  const workerAddress = worker?.addressLine?.trim()
+    || [worker?.district, worker?.state].filter(Boolean).join(', ');
+
+  const submitRequest = async () => {
+    setSubmitError('');
+    const normalizedOffer = offerAmount.trim();
+    const proposedAmount = normalizedOffer ? Number(normalizedOffer) : null;
+    if (proposedAmount !== null && (!Number.isFinite(proposedAmount) || proposedAmount <= 0 || proposedAmount > 99999999)) {
+      setSubmitError('Enter a valid offer amount greater than zero, or leave it blank.');
+      return;
+    }
+    if (!session?.user.id || !categoryId || !districtId || !workerId) {
+      setSubmitError('Your request details are incomplete. Return to the service form and try again.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await createServiceRequest({
+        customer_id: session.user.id,
+        service_category_id: categoryId,
+        district_id: districtId,
+        description,
+        address_line: typeof addressLine === 'string' ? addressLine : '',
+        society_name: typeof societyName === 'string' && societyName ? societyName : null,
+        flat_number: typeof flatNumber === 'string' && flatNumber ? flatNumber : null,
+        latitude: requestCoordinates.latitude,
+        longitude: requestCoordinates.longitude,
+        proposed_amount: proposedAmount,
+        preferred_worker_id: workerId,
+      });
+      setRequestCreated(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Unable to submit your service request.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (!worker && loading) {
     return (
@@ -112,6 +182,7 @@ export default function Job() {
               <MaterialIcons name="star" size={16} color="#C27B00" />
               <Text style={styles.rating}>{worker.averageRating.toFixed(1)}</Text>
               <Text style={styles.ratingCaption}>out of 5</Text>
+              <Text style={styles.ratingCaption}>· {worker.reviewCount} reviews</Text>
             </View>
           </View>
           <View style={styles.serviceIcon}>
@@ -150,8 +221,8 @@ export default function Job() {
               <MaterialIcons name="location-on" size={19} color={Colors.light.backgroundSelected} />
             </View>
             <View style={styles.detailCopy}>
-              <Text style={styles.detailLabel}>{serviceLocation ? 'Your GPS location' : 'Service area'}</Text>
-              <Text style={styles.detailValue}>{serviceLocation || worker.district}</Text>
+              <Text style={styles.detailLabel}>Worker address</Text>
+              <Text style={styles.detailValue}>{workerAddress || 'Address not provided'}</Text>
             </View>
           </View>
           <View style={styles.divider} />
@@ -160,9 +231,21 @@ export default function Job() {
               <MaterialIcons name="verified" size={19} color={Colors.light.backgroundSelected} />
             </View>
             <View style={styles.detailCopy}>
-              <Text style={styles.detailLabel}>Verified · experience · completed jobs</Text>
+              <Text style={styles.detailLabel}>Verification status · experience · completed jobs</Text>
               <Text style={styles.detailValue}>
-                {worker.experienceYears} years · {worker.completedJobsCount} completed jobs
+                {worker.verificationStatus === 'verified' ? 'Verified' : 'Not verified'} · {worker.experienceYears} years · {worker.completedJobsCount} completed jobs
+              </Text>
+            </View>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.detailRow}>
+            <View style={styles.detailIcon}>
+              <MaterialIcons name="home" size={19} color={Colors.light.backgroundSelected} />
+            </View>
+            <View style={styles.detailCopy}>
+              <Text style={styles.detailLabel}>Your service address</Text>
+              <Text style={styles.detailValue}>
+                {requestAddress || [districtName, stateName].filter(Boolean).join(', ') || 'Address not provided'}
               </Text>
             </View>
           </View>
@@ -183,7 +266,7 @@ export default function Job() {
               <View style={styles.priceCard}>
         <View>
           <Text style={styles.priceLabel}>Technician rate</Text>
-          <Text style={styles.priceCaption}>Final cost depends on the work required</Text>
+          <Text style={styles.priceCaption}>You can suggest an amount for the worker to review.</Text>
         </View>
 
         <View style={styles.rateValues}>
@@ -206,31 +289,48 @@ export default function Job() {
       </View>
 
 
+        <View style={styles.offerCard}>
+          <Text style={styles.offerLabel}>Your offer (₹, optional)</Text>
+          <Text style={styles.offerCaption}>Leave blank to discuss the rate with the worker.</Text>
+          <TextInput
+            accessibilityLabel="Your offer amount in rupees"
+            editable={!requestCreated && !submitting}
+            keyboardType="numeric"
+            maxLength={10}
+            onChangeText={setOfferAmount}
+            placeholder="Enter an amount"
+            placeholderTextColor={Colors.light.textSecondary}
+            style={styles.offerInput}
+            value={offerAmount}
+          />
+        </View>
+
         <View style={styles.notice}>
-          <MaterialIcons name="info-outline" size={19} color={Colors.light.backgroundSelected} />
-          <Text style={styles.noticeText}>No booking or payment is made on this screen. Contact and payment features will be added later.</Text>
+          <MaterialIcons
+            name={requestCreated ? 'check-circle' : submitError ? 'error-outline' : 'info-outline'}
+            size={19}
+            color={requestCreated ? '#24734A' : submitError ? '#B42318' : Colors.light.backgroundSelected}
+          />
+          <Text style={[styles.noticeText, submitError && styles.noticeError]}>
+            {requestCreated
+              ? 'Your request was sent to verified workers offering this service in the same district. The selected worker is marked as your preference.'
+              : submitError || 'Your request and optional offer will be shared only with verified workers for this service in the selected district.'}
+          </Text>
         </View>
       </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
         <Pressable
           accessibilityRole="button"
-          onPress={() => setShowPaymentAlert(true)}
-          style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}
+          disabled={submitting || requestCreated}
+          onPress={() => { void submitRequest(); }}
+          style={({ pressed }) => [styles.continueButton, pressed && styles.pressed, (submitting || requestCreated) && styles.disabledButton]}
         >
-          <Text style={styles.continueText}>Continue</Text>
-          <MaterialIcons name="arrow-forward" size={20} color={Colors.light.text} />
+          {submitting ? <ActivityIndicator color={Colors.light.text} /> : null}
+          <Text style={styles.continueText}>{requestCreated ? 'Request sent' : submitting ? 'Sending request…' : 'Send service request'}</Text>
+          {!submitting && !requestCreated ? <MaterialIcons name="send" size={19} color={Colors.light.text} /> : null}
         </Pressable>
       </View>
-
-      <ThemedAlert
-        actionLabel="Got it"
-        message="Online booking and payment are not available yet. Your request has not been submitted."
-        onAction={() => setShowPaymentAlert(false)}
-        onClose={() => setShowPaymentAlert(false)}
-        title="Booking unavailable"
-        visible={showPaymentAlert}
-      />
     </View>
   );
 }
@@ -269,11 +369,17 @@ const styles = StyleSheet.create({
   rateValues: { alignItems: 'flex-end', gap: 4, marginTop: 8 },
   negotiable: { color: Colors.light.backgroundSelected, fontSize: 11, fontWeight: '700' },
   perHour: { fontSize: 12, fontWeight: '500' },
+  offerCard: { marginHorizontal: 20, marginTop: 15, padding: 16, borderRadius: 15, backgroundColor: Colors.light.backgroundElement },
+  offerLabel: { color: Colors.light.text, fontSize: 14, fontWeight: '700' },
+  offerCaption: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
+  offerInput: { minHeight: 48, marginTop: 12, paddingHorizontal: 13, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 10, color: Colors.light.text, fontSize: 15 },
   notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginHorizontal: 20, marginTop: 15, padding: 13, borderRadius: 12, backgroundColor: '#EFF3F8' },
   noticeText: { flex: 1, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 18 },
+  noticeError: { color: '#B42318' },
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D8E0E9', backgroundColor: Colors.light.background },
   continueButton: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 13, backgroundColor: Colors.light.backgroundSelected },
   continueText: { color: Colors.light.text, fontSize: 15, fontWeight: '700' },
+  disabledButton: { opacity: 0.65 },
   pressed: { opacity: 0.82 },
   emptyPage: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: Colors.light.background },
   emptyIcon: { width: 62, height: 62, alignItems: 'center', justifyContent: 'center', borderRadius: 31, backgroundColor: '#EFF3F8' },

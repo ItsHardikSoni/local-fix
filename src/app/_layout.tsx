@@ -58,6 +58,8 @@ function AppEntry() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="help" options={{ title: 'Help & information', headerShown: false }} />
         <Stack.Screen name="jobs" options={{ title: 'Review request', headerShown: false }} />
+        <Stack.Screen name="worker-requests" options={{ title: 'Service requests', headerShown: false }} />
+        <Stack.Screen name="my-requests" options={{ title: 'Service history', headerShown: false }} />
       </Stack.Protected>
       <Stack.Protected guard={!isSignedIn}>
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
