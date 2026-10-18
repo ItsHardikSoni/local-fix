@@ -72,7 +72,7 @@ export async function saveCustomerAddress(
   customerId: string,
   addressId: string | null,
   input: CustomerAddressInput,
-): Promise<string> {
+): Promise<CustomerAddress> {
   const values = {
     ...input,
     customer_id: customerId,
@@ -84,16 +84,16 @@ export async function saveCustomerAddress(
       .update(values)
       .eq('id', addressId)
       .eq('customer_id', customerId)
-      .select('id')
+      .select('id, district_id, address_line, society_name, flat_number, latitude, longitude')
       .single()
     : await supabase
       .from('customer_addresses')
       .insert(values)
-      .select('id')
+      .select('id, district_id, address_line, society_name, flat_number, latitude, longitude')
       .single();
 
   if (result.error) {
     throw new Error(`Unable to save your address: ${result.error.message}`);
   }
-  return result.data.id;
+  return result.data;
 }

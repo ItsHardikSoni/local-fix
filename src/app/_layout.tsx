@@ -8,6 +8,7 @@ import LoadingScreen from '../components/loading-screen';
 import SplashScreen from '../components/splash-screen';
 import { UserProvider, useUser } from '../context/UserContext';
 import { LocationProvider } from '../context/LocationContext';
+import { CustomerAddressProvider } from '../context/CustomerAddressContext';
 import { Colors } from '../constants/theme';
 
 function AppEntry() {
@@ -78,7 +79,9 @@ export default function Layout() {
     <SafeAreaProvider>
       <UserProvider>
         <LocationProvider>
-          <AppEntry />
+          <CustomerAddressProvider>
+            <AppEntry />
+          </CustomerAddressProvider>
         </LocationProvider>
       </UserProvider>
     </SafeAreaProvider>

@@ -12,15 +12,8 @@ import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { Colors } from '../../constants/theme';
 import { useUser } from '../../context/UserContext';
 import { useLocation } from '../../context/LocationContext';
+import { useCustomerAddress } from '../../context/CustomerAddressContext';
 import StateDistrictPicker from '../../components/state-district-picker';
-import {
-  loadAddressOptions,
-  loadLatestCustomerAddress,
-  saveCustomerAddress,
-  type CustomerAddress,
-  type DistrictOption,
-  type StateOption,
-} from '../../lib/customer-addresses';
 import ThemedAlert from '../../components/ui/themed-alert';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -36,6 +29,17 @@ export default function ProfileScreen() {
     updateProfile,
   } = useUser();
   const { location } = useLocation();
+  const {
+    address,
+    states,
+    districts,
+    addressLoading,
+    addressError: addressSyncError,
+    realtimeConnected,
+    realtimeError,
+    saveAddress,
+    refreshAddressData,
+  } = useCustomerAddress();
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -54,10 +58,6 @@ export default function ProfileScreen() {
     latitude: number | null;
     longitude: number | null;
   }>({ latitude: null, longitude: null });
-  const [savedAddress, setSavedAddress] = useState<CustomerAddress | null>(null);
-  const [states, setStates] = useState<StateOption[]>([]);
-  const [districts, setDistricts] = useState<DistrictOption[]>([]);
-  const [addressLoading, setAddressLoading] = useState(true);
   const [addressSaving, setAddressSaving] = useState(false);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressError, setAddressError] = useState('');
@@ -77,54 +77,32 @@ export default function ProfileScreen() {
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
     : null;
-  const addressDistrictName = districts.find((item) => item.id === addressDistrictId)?.district_name;
+  const addressDistrictName = districts.find((item) => item.id === address?.district_id)?.district_name;
 
   useEffect(() => {
-    const customerId = user?.id;
-    if (!customerId) {
-      setAddressLoading(false);
-      setAddressError('Sign in to manage your service address.');
+    if (addressEditing) return;
+    if (!address) {
+      setAddressId(null);
+      setAddressLine('');
+      setAddressSociety('');
+      setAddressFlat('');
+      setAddressDistrictId('');
+      setAddressStateName('');
+      setAddressCoordinates({ latitude: null, longitude: null });
       return;
     }
-
-    let active = true;
-    const loadAddress = async () => {
-      setAddressLoading(true);
-      setAddressError('');
-      const [options, savedAddress] = await Promise.all([
-        loadAddressOptions(),
-        loadLatestCustomerAddress(customerId),
-      ]);
-      if (!active) return;
-
-      setStates(options.states);
-      setDistricts(options.districts);
-      if (savedAddress) {
-        const district = options.districts.find((item) => item.id === savedAddress.district_id);
-        setSavedAddress(savedAddress);
-        setAddressId(savedAddress.id);
-        setAddressLine(savedAddress.address_line);
-        setAddressSociety(savedAddress.society_name ?? '');
-        setAddressFlat(savedAddress.flat_number ?? '');
-        setAddressDistrictId(savedAddress.district_id);
-        setAddressStateName(district?.state_name ?? '');
-        setAddressCoordinates({
-          latitude: savedAddress.latitude,
-          longitude: savedAddress.longitude,
-        });
-      }
-      setAddressLoading(false);
-    };
-
-    void loadAddress().catch((error: unknown) => {
-      if (!active) return;
-      setAddressError(error instanceof Error ? error.message : 'Unable to load your address.');
-      setAddressLoading(false);
+    const district = districts.find((item) => item.id === address.district_id);
+    setAddressId(address.id);
+    setAddressLine(address.address_line);
+    setAddressSociety(address.society_name ?? '');
+    setAddressFlat(address.flat_number ?? '');
+    setAddressDistrictId(address.district_id);
+    setAddressStateName(district?.state_name ?? '');
+    setAddressCoordinates({
+      latitude: address.latitude,
+      longitude: address.longitude,
     });
-    return () => {
-      active = false;
-    };
-  }, [user?.id]);
+  }, [address, addressEditing, districts]);
 
   const handleSaveAddress = async () => {
     setAddressAttemptedSave(true);
@@ -136,7 +114,7 @@ export default function ProfileScreen() {
     try {
       const latitude = location?.coords.latitude ?? addressCoordinates.latitude;
       const longitude = location?.coords.longitude ?? addressCoordinates.longitude;
-      const savedId = await saveCustomerAddress(user.id, addressId, {
+      const saved = await saveAddress(addressId, {
         district_id: addressDistrictId,
         address_line: addressLine.trim(),
         society_name: addressSociety.trim() || null,
@@ -144,16 +122,7 @@ export default function ProfileScreen() {
         latitude,
         longitude,
       });
-      setAddressId(savedId);
-      setSavedAddress({
-        id: savedId,
-        district_id: addressDistrictId,
-        address_line: addressLine.trim(),
-        society_name: addressSociety.trim() || null,
-        flat_number: addressFlat.trim() || null,
-        latitude,
-        longitude,
-      });
+      setAddressId(saved.id);
       setAddressCoordinates({ latitude, longitude });
       setAddressEditing(false);
       setAddressAttemptedSave(false);
@@ -407,7 +376,13 @@ export default function ProfileScreen() {
         <View style={styles.addressHeading}>
           <View>
             <Text style={styles.sectionTitle}>Service address</Text>
-            <Text style={styles.addressCaption}>The address technicians should visit</Text>
+            <Text style={styles.addressCaption}>
+              {realtimeConnected
+                ? 'Live updates enabled'
+                : realtimeError
+                  ? 'Live updates unavailable'
+                  : 'Connecting to live updates…'}
+            </Text>
           </View>
           {!addressEditing && !addressLoading ? (
             <Pressable
@@ -491,19 +466,6 @@ export default function ProfileScreen() {
                   accessibilityRole="button"
                   disabled={addressSaving}
                   onPress={() => {
-                    const restoredDistrict = savedAddress
-                      ? districts.find((item) => item.id === savedAddress.district_id)
-                      : undefined;
-                    setAddressId(savedAddress?.id ?? null);
-                    setAddressLine(savedAddress?.address_line ?? '');
-                    setAddressSociety(savedAddress?.society_name ?? '');
-                    setAddressFlat(savedAddress?.flat_number ?? '');
-                    setAddressDistrictId(savedAddress?.district_id ?? '');
-                    setAddressStateName(restoredDistrict?.state_name ?? '');
-                    setAddressCoordinates({
-                      latitude: savedAddress?.latitude ?? null,
-                      longitude: savedAddress?.longitude ?? null,
-                    });
                     setAddressEditing(false);
                     setAddressError('');
                     setAddressAttemptedSave(false);
@@ -527,7 +489,7 @@ export default function ProfileScreen() {
                 </Pressable>
               </View>
             </>
-          ) : addressId ? (
+          ) : address ? (
             <>
               <Text style={styles.addressValue}>{addressLine}</Text>
               {addressFlat ? <Text style={styles.addressDetail}>Flat / House {addressFlat}</Text> : null}
@@ -539,7 +501,16 @@ export default function ProfileScreen() {
           ) : (
             <Text style={styles.addressCaption}>No service address saved yet.</Text>
           )}
-          {addressError ? <Text accessibilityRole="alert" style={styles.error}>{addressError}</Text> : null}
+          {addressError || addressSyncError || realtimeError ? (
+            <>
+              <Text accessibilityRole="alert" style={styles.error}>
+                {addressError || addressSyncError || realtimeError}
+              </Text>
+              <Pressable accessibilityRole="button" onPress={() => { void refreshAddressData(); }}>
+                <Text style={styles.editButtonText}>Refresh address data</Text>
+              </Pressable>
+            </>
+          ) : null}
           {addressSuccess ? <Text accessibilityRole="summary" style={styles.success}>{addressSuccess}</Text> : null}
         </View>
 

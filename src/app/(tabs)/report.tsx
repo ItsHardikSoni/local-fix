@@ -15,14 +15,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useLocation } from '../../context/LocationContext';
 import { useUser } from '../../context/UserContext';
+import { useCustomerAddress } from '../../context/CustomerAddressContext';
 import StateDistrictPicker from '../../components/state-district-picker';
-import {
-  loadAddressOptions,
-  loadLatestCustomerAddress,
-  saveCustomerAddress,
-  type DistrictOption,
-  type StateOption,
-} from '../../lib/customer-addresses';
 import { supabaseConfigured } from '../../lib/supabase';
 
 const issueTypes = [
@@ -36,78 +30,58 @@ export default function Report() {
   const router = useRouter();
   const { location, district: currentDistrict, locationLoading, locationError, refreshLocation } = useLocation();
   const { session } = useUser();
+  const {
+    address,
+    states,
+    districts,
+    addressLoading,
+    addressError: addressSyncError,
+    realtimeConnected,
+    realtimeError,
+    saveAddress,
+    refreshAddressData,
+  } = useCustomerAddress();
   const { type: initialType } = useLocalSearchParams<{ type?: string }>();
   const [type, setType] = useState('Water leak');
   const [desc, setDesc] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
-  const [states, setStates] = useState<StateOption[]>([]);
-  const [districts, setDistricts] = useState<DistrictOption[]>([]);
-  const [addressId, setAddressId] = useState<string | null>(null);
+  const [addressDraftDirty, setAddressDraftDirty] = useState(false);
+  const [addressTargetId, setAddressTargetId] = useState<string | null>(null);
   const [addressLine, setAddressLine] = useState('');
   const [societyName, setSocietyName] = useState('');
   const [flatNumber, setFlatNumber] = useState('');
   const [stateName, setStateName] = useState('');
   const [districtId, setDistrictId] = useState('');
-  const [savedAddressCoordinates, setSavedAddressCoordinates] = useState<{
+  const [addressCoordinates, setAddressCoordinates] = useState<{
     latitude: number | null;
     longitude: number | null;
   }>({ latitude: null, longitude: null });
-  const [addressLoading, setAddressLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [addressError, setAddressError] = useState('');
 
   useEffect(() => {
-    const customerId = session?.user.id;
-    if (!customerId || !supabaseConfigured) {
-      setAddressLoading(false);
-      setAddressError(!customerId
-        ? 'Sign in before adding a service address.'
-        : 'Supabase is not configured. Check the app settings.');
-      return;
+    if (addressDraftDirty) return;
+    if (address) {
+      setAddressTargetId(address.id);
+      setAddressLine(address.address_line);
+      setSocietyName(address.society_name ?? '');
+      setFlatNumber(address.flat_number ?? '');
+      setDistrictId(address.district_id);
+      setStateName(districts.find((item) => item.id === address.district_id)?.state_name ?? '');
+      setAddressCoordinates({ latitude: address.latitude, longitude: address.longitude });
+    } else {
+      setAddressTargetId(null);
+      setAddressLine('');
+      setSocietyName('');
+      setFlatNumber('');
+      setDistrictId('');
+      setStateName('');
+      setAddressCoordinates({ latitude: null, longitude: null });
     }
-
-    let active = true;
-    const loadAddressData = async () => {
-      setAddressLoading(true);
-      setAddressError('');
-
-      const [options, savedAddress] = await Promise.all([
-        loadAddressOptions(),
-        loadLatestCustomerAddress(customerId),
-      ]);
-
-      if (!active) return;
-      setStates(options.states);
-      setDistricts(options.districts);
-      if (savedAddress) {
-        setAddressId(savedAddress.id);
-        setAddressLine(savedAddress.address_line);
-        setSocietyName(savedAddress.society_name ?? '');
-        setFlatNumber(savedAddress.flat_number ?? '');
-        setDistrictId(savedAddress.district_id);
-        setStateName(options.districts.find((item) => item.id === savedAddress.district_id)?.state_name ?? '');
-        setSavedAddressCoordinates({
-          latitude: savedAddress.latitude,
-          longitude: savedAddress.longitude,
-        });
-      }
-      setAddressLoading(false);
-    };
-
-    void loadAddressData().catch((error: unknown) => {
-      if (!active) return;
-      const details = error instanceof Error ? error.message : 'Unexpected network error';
-      setAddressError(`Unable to load address information: ${details}`);
-      setAddressLoading(false);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [session?.user.id]);
+  }, [address, addressDraftDirty, districts]);
 
   useEffect(() => {
-    if (districtId || !currentDistrict || districts.length === 0) return;
+    if (addressDraftDirty || districtId || !currentDistrict || districts.length === 0) return;
     const match = districts.find((item) => (
       item.district_name.toLowerCase() === currentDistrict.toLowerCase()
     ));
@@ -115,7 +89,7 @@ export default function Report() {
       setStateName(match.state_name);
       setDistrictId(match.id);
     }
-  }, [currentDistrict, districtId, districts]);
+  }, [addressDraftDirty, currentDistrict, districtId, districts]);
 
   useEffect(() => {
     if (typeof initialType === 'string' && initialType.trim()) {
@@ -142,9 +116,9 @@ export default function Report() {
     setAddressError('');
     try {
       const currentLocation = await refreshLocation() ?? location;
-      const latitude = currentLocation?.coords.latitude ?? savedAddressCoordinates.latitude;
-      const longitude = currentLocation?.coords.longitude ?? savedAddressCoordinates.longitude;
-      const savedId = await saveCustomerAddress(session.user.id, addressId, {
+      const latitude = currentLocation?.coords.latitude ?? addressCoordinates.latitude;
+      const longitude = currentLocation?.coords.longitude ?? addressCoordinates.longitude;
+      const savedAddress = await saveAddress(addressTargetId, {
         district_id: districtId,
         address_line: addressLine.trim(),
         society_name: societyName.trim() || null,
@@ -152,8 +126,8 @@ export default function Report() {
         latitude,
         longitude,
       });
-      setAddressId(savedId);
-      setSavedAddressCoordinates({ latitude, longitude });
+      setAddressTargetId(savedAddress.id);
+      setAddressDraftDirty(false);
 
       router.push({
         pathname: '/technicians',
@@ -165,8 +139,7 @@ export default function Report() {
         },
       });
     } catch (error) {
-      const details = error instanceof Error ? error.message : 'Unexpected network error';
-      setAddressError(`Unable to save your address: ${details}`);
+      setAddressError(error instanceof Error ? error.message : 'Unable to save your address.');
     } finally {
       setSaving(false);
     }
@@ -266,11 +239,12 @@ export default function Report() {
 
           <View style={styles.addressHeader}>
             <Text style={styles.sectionTitle}>Where should the technician visit?</Text>
-            {addressId ? (
+            {addressTargetId ? (
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
-                  setAddressId(null);
+                  setAddressDraftDirty(true);
+                  setAddressTargetId(null);
                   setAddressLine('');
                   setSocietyName('');
                   setFlatNumber('');
@@ -279,15 +253,22 @@ export default function Report() {
                   ));
                   setStateName(matchedDistrict?.state_name ?? '');
                   setDistrictId(matchedDistrict?.id ?? '');
-                  setSavedAddressCoordinates({ latitude: null, longitude: null });
+                  setAddressCoordinates({ latitude: null, longitude: null });
                 }}
               >
                 <Text style={styles.addAddressText}>Add another</Text>
               </Pressable>
             ) : null}
           </View>
+          <Text style={styles.addressSyncStatus}>
+            {realtimeConnected
+              ? 'Address data is live'
+              : realtimeError
+                ? 'Live updates unavailable'
+                : 'Connecting to live address updates…'}
+          </Text>
           <Text style={styles.addressHelper}>
-            {addressId ? 'Your saved address is filled in. You can update it or add another.' : 'Add your service address. Your GPS coordinates are included when available.'}
+            {addressTargetId ? 'Your saved address is filled in. You can update it or add another.' : 'Add your service address. Your GPS coordinates are included when available.'}
           </Text>
 
           {addressLoading ? (
@@ -302,7 +283,10 @@ export default function Report() {
                 accessibilityLabel="Address"
                 autoCapitalize="words"
                 maxLength={500}
-                onChangeText={setAddressLine}
+                onChangeText={(value) => {
+                  setAddressDraftDirty(true);
+                  setAddressLine(value);
+                }}
                 placeholder="House number, street, and area"
                 placeholderTextColor={Colors.light.textSecondary}
                 style={[styles.input, addressLineError && styles.inputError]}
@@ -314,8 +298,12 @@ export default function Report() {
                 districts={districts}
                 districtError={districtError}
                 districtId={districtId}
-                onDistrictChange={setDistrictId}
+                onDistrictChange={(value) => {
+                  setAddressDraftDirty(true);
+                  setDistrictId(value);
+                }}
                 onStateChange={(nextStateId) => {
+                  setAddressDraftDirty(true);
                   setStateName(nextStateId);
                   setDistrictId('');
                 }}
@@ -329,7 +317,10 @@ export default function Report() {
                 accessibilityLabel="Society or apartment"
                 autoCapitalize="words"
                 maxLength={160}
-                onChangeText={setSocietyName}
+                onChangeText={(value) => {
+                  setAddressDraftDirty(true);
+                  setSocietyName(value);
+                }}
                 placeholder="Society or apartment name"
                 placeholderTextColor={Colors.light.textSecondary}
                 style={styles.input}
@@ -341,7 +332,10 @@ export default function Report() {
                 accessibilityLabel="Flat or house number"
                 autoCapitalize="characters"
                 maxLength={80}
-                onChangeText={setFlatNumber}
+                onChangeText={(value) => {
+                  setAddressDraftDirty(true);
+                  setFlatNumber(value);
+                }}
                 placeholder="Flat or house number"
                 placeholderTextColor={Colors.light.textSecondary}
                 style={styles.input}
@@ -349,7 +343,16 @@ export default function Report() {
               />
             </>
           )}
-          {addressError ? <Text accessibilityRole="alert" style={styles.errorText}>{addressError}</Text> : null}
+          {addressSyncError || realtimeError ? (
+            <View>
+              <Text accessibilityRole="alert" style={styles.errorText}>
+                {addressError || addressSyncError || realtimeError}
+              </Text>
+              <Pressable accessibilityRole="button" onPress={() => { void refreshAddressData(); }}>
+                <Text style={styles.addAddressText}>Refresh address data</Text>
+              </Pressable>
+            </View>
+          ) : addressError ? <Text accessibilityRole="alert" style={styles.errorText}>{addressError}</Text> : null}
 
           <View style={styles.locationStatus}>
             <MaterialIcons
@@ -412,6 +415,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: Colors.light.text, fontSize: 16, fontWeight: '700' },
   addressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
   addAddressText: { color: Colors.light.backgroundSelected, fontSize: 12, fontWeight: '700' },
+  addressSyncStatus: { marginTop: -3, marginBottom: 8, color: Colors.light.textSecondary, fontSize: 11 },
   addressHelper: { marginBottom: 15, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
   addressLoading: { flexDirection: 'row', alignItems: 'center', gap: 9, marginVertical: 12 },
   label: { marginBottom: 9, color: Colors.light.text, fontSize: 14, fontWeight: '700' },
