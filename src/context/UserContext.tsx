@@ -1,11 +1,12 @@
 import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
 import type { AuthError, Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from '../lib/supabase';
+import { otpApiConfigured, requestOtpApi } from '../lib/otp-api';
 
 type AuthErrorMessage = Pick<AuthError, 'message'>;
 type ProfileUpdateResult = {
   error: { message: string } | null;
-  emailConfirmationRequired: boolean;
+  otpRequired: boolean;
 };
 
 export type UserProfile = {
@@ -72,10 +73,12 @@ type UserContextType = {
   profileError: string | null;
   signIn: (email: string, password: string) => Promise<AuthErrorMessage | null>;
   signOut: () => Promise<AuthErrorMessage | null>;
+  verifyProfileEmail: (email: string, code: string, fullName: string, phone: string) => Promise<AuthErrorMessage | null>;
   updateProfile: (fullName: string, email: string, phone: string) => Promise<ProfileUpdateResult>;
-  signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{
+  verifySignUpOtp: (email: string, code: string, password: string, fullName: string, phone: string) => Promise<AuthErrorMessage | null>;
+  signUp: (email: string) => Promise<{
     error: AuthErrorMessage | null;
-    confirmationRequired: boolean;
+    otpSent: boolean;
   }>;
 };
 
@@ -250,100 +253,131 @@ export const UserProvider = ({
   ): Promise<ProfileUpdateResult> => {
     const currentUser = session?.user;
     if (!currentUser) {
-      return { error: { message: 'You must be signed in to update your profile.' }, emailConfirmationRequired: false };
+      return { error: { message: 'You must be signed in to update your profile.' }, otpRequired: false };
     }
-    if (!supabaseConfigured) {
+    if (!supabaseConfigured || !otpApiConfigured) {
       return {
-        error: { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' },
-        emailConfirmationRequired: false,
+        error: { message: 'Supabase or the OTP service is not configured. Check the Expo .env settings.' },
+        otpRequired: false,
       };
     }
 
     const normalizedEmail = email.trim();
-    const { data: authData, error: authError } = await supabase.auth.updateUser({
-      ...(normalizedEmail.toLowerCase() !== currentUser.email?.toLowerCase()
-        ? { email: normalizedEmail }
-        : {}),
-      data: {
-        full_name: fullName.trim(),
-        phone: phone.trim() || null,
-      },
-    });
+    try {
+      if (normalizedEmail.toLowerCase() !== currentUser.email?.toLowerCase()) {
+        await requestOtpApi<{ message: string }>(
+          '/v1/profile/email/request-otp',
+          { email: normalizedEmail },
+          session.access_token,
+        );
+        return { error: null, otpRequired: true };
+      }
 
-    if (authError) {
-      return { error: authError, emailConfirmationRequired: false };
+      const result = await requestOtpApi<{ profile: unknown }>(
+        '/v1/profile/update',
+        { fullName: fullName.trim(), phone: phone.trim() },
+        session.access_token,
+      );
+      const nextProfile = parseProfile(result.profile);
+      if (!nextProfile) {
+        return {
+          error: { message: 'Your profile was updated, but the service returned invalid profile data.' },
+          otpRequired: false,
+        };
+      }
+
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        return {
+          error: { message: `Your profile was updated, but your session could not be refreshed: ${refreshError.message}` },
+          otpRequired: false,
+        };
+      }
+      setProfile(nextProfile);
+      setProfileError(null);
+      return { error: null, otpRequired: false };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update your profile.';
+      return { error: { message }, otpRequired: false };
     }
-
-    const { data: updatedProfile, error: profileUpdateError } = await supabase
-      .from('profiles')
-      .update({
-        full_name: fullName.trim(),
-        phone: phone.trim() || null,
-        email: authData.user.email ?? null,
-      })
-      .eq('id', currentUser.id)
-      .select('id, full_name, phone, email')
-      .maybeSingle();
-
-    if (profileUpdateError) {
-      return {
-        error: { message: `Authentication was updated, but the profile record could not be synchronized: ${profileUpdateError.message}` },
-        emailConfirmationRequired: false,
-      };
-    }
-    if (!updatedProfile) {
-      return {
-        error: { message: 'Authentication was updated, but your profile record could not be found.' },
-        emailConfirmationRequired: false,
-      };
-    }
-
-    const nextProfile = parseProfile(updatedProfile);
-    if (!nextProfile) {
-      return {
-        error: { message: 'Authentication was updated, but the profile data returned by the server is invalid.' },
-        emailConfirmationRequired: false,
-      };
-    }
-
-    setProfile(nextProfile);
-    setProfileError(null);
-
-    const emailConfirmationRequired = Boolean(
-      authData.user.new_email
-      && authData.user.new_email.toLowerCase() === normalizedEmail.toLowerCase()
-      && authData.user.email?.toLowerCase() !== normalizedEmail.toLowerCase(),
-    );
-
-    return { error: null, emailConfirmationRequired };
   };
 
-  const signUp = async (email: string, password: string, fullName: string, phone: string) => {
-    if (!supabaseConfigured) {
+  const verifyProfileEmail = async (
+    email: string,
+    code: string,
+    fullName: string,
+    phone: string,
+  ): Promise<AuthErrorMessage | null> => {
+    if (!session || !otpApiConfigured) {
+      return { message: 'Sign in and configure the OTP service before verifying your new email.' };
+    }
+
+    try {
+      const result = await requestOtpApi<{ profile: unknown }>(
+        '/v1/profile/email/verify-otp',
+        { email: email.trim(), code: code.trim(), fullName: fullName.trim(), phone: phone.trim() },
+        session.access_token,
+      );
+      const nextProfile = parseProfile(result.profile);
+      if (!nextProfile) {
+        return { message: 'Your account was updated, but the service returned invalid profile data.' };
+      }
+
+      const { error } = await supabase.auth.refreshSession();
+      if (error) {
+        return { message: `Your account was updated, but your session could not be refreshed: ${error.message}` };
+      }
+      setProfile(nextProfile);
+      setProfileError(null);
+      return null;
+    } catch (error) {
+      return { message: error instanceof Error ? error.message : 'Unable to verify your new email.' };
+    }
+  };
+
+  const signUp = async (email: string) => {
+    if (!supabaseConfigured || !otpApiConfigured) {
       return {
-        error: { message: 'Supabase is not configured. Add the project URL and publishable key to .env.' },
-        confirmationRequired: false,
+        error: { message: 'Supabase or the OTP service is not configured. Check the Expo .env settings.' },
+        otpSent: false,
       };
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          phone: phone || null,
-        },
-      },
-    });
+    try {
+      await requestOtpApi<{ message: string }>('/v1/auth/signup/request-otp', { email: email.trim() });
+      return { error: null, otpSent: true };
+    } catch (error) {
+      return {
+        error: { message: error instanceof Error ? error.message : 'Unable to send the verification code.' },
+        otpSent: false,
+      };
+    }
+  };
 
-    if (error) return { error, confirmationRequired: false };
-    if (data.session && data.user) {
-      const profileError = await ensureProfileExists(data.user);
-      if (profileError) return { error: profileError, confirmationRequired: false };
+  const verifySignUpOtp = async (
+    email: string,
+    code: string,
+    password: string,
+    fullName: string,
+    phone: string,
+  ): Promise<AuthErrorMessage | null> => {
+    if (!supabaseConfigured || !otpApiConfigured) {
+      return { message: 'Supabase or the OTP service is not configured. Check the Expo .env settings.' };
     }
 
-    return { error: null, confirmationRequired: !data.session };
+    try {
+      await requestOtpApi<{ message: string }>('/v1/auth/signup/verify-otp', {
+        email: email.trim(),
+        code: code.trim(),
+        password,
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+      });
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      return error;
+    } catch (error) {
+      return { message: error instanceof Error ? error.message : 'Unable to verify your email and create your account.' };
+    }
   };
 
   return (
@@ -357,7 +391,9 @@ export const UserProvider = ({
       profileError,
       signIn,
       signOut,
+      verifyProfileEmail,
       updateProfile,
+      verifySignUpOtp,
       signUp,
     }}>
       {children}
