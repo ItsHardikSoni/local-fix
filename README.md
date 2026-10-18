@@ -35,38 +35,6 @@ Run [`supabase/worker-profiles.sql`](supabase/worker-profiles.sql) after the pro
 
 To add a real worker from the Supabase SQL editor, replace the profile UUID, district/state names, experience, and rates below with verified real data. New profiles default to pending verification and offline. Then link the services and have an administrator verify the profile only after checking the worker:
 
-```sql
-insert into public.worker_profiles (
-  id, worker_name, district_id, experience_years, hourly_rate, daily_rate, rates_negotiable
-)
-select
-  profile.id,
-  profile.full_name,
-  district.id,
-  'REPLACE_EXPERIENCE_YEARS'::numeric,
-  'REPLACE_HOURLY_RATE'::numeric,
-  'REPLACE_DAILY_RATE'::numeric,
-  true
-from public.profiles profile
-join public.districts district
-  on district.state_name = 'Replace with state'
-  and district.district_name = 'Replace with district'
-where profile.id = 'Replace with existing profiles.id UUID'::uuid;
-
-insert into public.worker_service_categories (worker_id, service_category_id)
-select
-  'Replace with the same profiles.id UUID'::uuid,
-  category.id
-from public.service_categories category
-where category.is_active
-  and category.name in ('Plumbing', 'Electrical')
-on conflict do nothing;
-
-update public.worker_profiles
-set verification_status = 'verified', availability_status = 'available'
-where id = 'Replace with the same profiles.id UUID'::uuid;
-```
-
 Use `public.accept_worker_job(p_job_id)` from the assigned worker's authenticated session to atomically accept one pending job, and `public.complete_worker_job(p_job_id)` to complete it and release availability. Use `public.set_my_worker_availability('available')` or `('offline')` for verified workers with no active job.
 
 Email/password sign-in and account creation use Supabase Auth directly. Account confirmation and email-change confirmation are controlled by the Supabase project's Authentication settings and use its configured email templates. If email confirmation is enabled, users follow Supabase's confirmation link; no separate email-verification server is required. AsyncStorage persists the Supabase session so returning users can go straight to Home. Profile name and phone edits are synchronized to Supabase Auth metadata and `public.profiles`.
