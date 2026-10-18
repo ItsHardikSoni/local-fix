@@ -7,7 +7,6 @@
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-vector-icons/material-icons": "^13.1.5",
     "@supabase/supabase-js": "^2.118.0",
-    "dotenv": "^18.0.8",
     "expo": "~57.0.30",
     "expo-constants": "~57.0.22",
     "expo-device": "~57.0.2",
@@ -23,7 +22,6 @@
     "expo-system-ui": "~57.0.4",
     "expo-updates": "~57.0.26",
     "expo-web-browser": "~57.0.3",
-    "nodemailer": "^10.1.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
@@ -36,15 +34,10 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "concurrently": "^9.2.5",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
-    "dev:local": "concurrently --kill-others -n API,EXPO \"npm:api:dev\" \"npm:start -- --clear\"",
-    "api:start": "node api/index.mjs",
-    "api:dev": "node --watch api/index.mjs",
-    "test:api": "node --test test/otp.test.mjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

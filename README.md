@@ -29,32 +29,11 @@ Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the root `
 
 Run [`supabase/profiles.sql`](supabase/profiles.sql) in the Supabase SQL editor after creating the `public.profiles` table. It creates a profile when an auth user signs up, allows authenticated users to read only their own profile, and adds the table to the `supabase_realtime` publication. The profile screen fetches the signed-in user's row and listens for changes to it. Sign-up collects full name and optional phone; email comes from Supabase Auth, and the table defaults supply status and timestamps.
 
-Email/password sign-in uses Supabase Auth. New accounts are created on the OTP API only after the user verifies a six-digit code sent through Nodemailer; Supabase Auth marks that email verified when creating the account. Profile email changes also require a code sent to the new address before the server updates Supabase Auth. AsyncStorage persists the Supabase session so returning users can go straight to Home. The app only sends a password to the OTP API during sign-up; use HTTPS outside local development. Never put SMTP credentials or a Supabase `service_role` key in the Expo app.
-
-### Local OTP email setup
-
-You do not need Railway or another hosting service for local development. Nodemailer runs in the Node API in this same repository. The API and Expo app are separate local processes, started together with one command:
-
-1. In the Supabase SQL editor, run [`supabase/migrations/001_email_otp_challenges.sql`](supabase/migrations/001_email_otp_challenges.sql).
-2. In the root `.env`, set `EXPO_PUBLIC_SUPABASE_URL` and server-only `SUPABASE_URL` to your Supabase project base URL (for example, `https://<project-ref>.supabase.co`, without `/rest/v1/`), and set a valid `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
-3. In the same root `.env`, configure the Node API secrets: `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, and a random `OTP_HASH_SECRET` of at least 32 characters. Use valid SMTP credentials (for Gmail, an app password with 2-Step Verification enabled). Never put these secrets in `EXPO_PUBLIC_` variables or access them from app code. The root `.env` is ignored by Git.
-4. Run this project on the same Mac that runs the iOS Simulator, then start both services:
-
-   ```sh
-   npm install
-   npm run dev:local
-   ```
-
-   In local development, the app uses `http://localhost:4000` automatically if `EXPO_PUBLIC_API_URL` is unset. Check `http://localhost:4000/health` returns `{"status":"ok"}`. Keep the combined command running while testing.
-5. Leave `CORS_ORIGINS` unset for native iOS/Android. CORS is only relevant to browser-based Expo web.
-
-If this repository and API run in a remote Codespace while the iOS Simulator is on your Mac, the simulator's `localhost` is your Mac and cannot reach the Codespace API. To avoid hosting the API externally, run the repository and both local processes on the Mac instead. An app release also needs a reachable HTTPS API endpoint; a local-only API supports local development and testing.
-
-The API limits code requests to five per email and purpose per 24 hours, applies a one-minute resend delay, expires codes after 10 minutes, and allows at most five verification attempts per code. Run `npm run test:api` for the OTP utility tests. Profile name and phone edits are synchronized to Supabase Auth metadata and `public.profiles`.
+Email/password sign-in and account creation use Supabase Auth directly. Account confirmation and email-change confirmation are controlled by the Supabase project's Authentication settings and use its configured email templates. If email confirmation is enabled, users follow Supabase's confirmation link; no separate email-verification server is required. AsyncStorage persists the Supabase session so returning users can go straight to Home. Profile name and phone edits are synchronized to Supabase Auth metadata and `public.profiles`.
 
 When a signed-in user opens LocalFix, the app requests foreground location access and reads their current coordinates. A service request refreshes that location and carries the coordinates through the technician selection and request review screens. Location access is only used while the app is in use; the operating system controls permission and device location settings.
 
-The Home screen displays the reverse-geocoded current location (or coordinates when an address is unavailable). Users can edit their name, email, and phone on Profile; name and phone are stored in Supabase Auth user metadata and the `profiles` table. Email changes are applied after the new email address is verified with the OTP.
+The Home screen displays the reverse-geocoded current location (or coordinates when an address is unavailable). Users can edit their name, email, and phone on Profile; name and phone are stored in Supabase Auth user metadata and the `profiles` table. Supabase Auth handles any email confirmation required for email changes.
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 

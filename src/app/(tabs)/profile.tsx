@@ -24,7 +24,6 @@ export default function ProfileScreen() {
     profileError,
     signOut,
     updateProfile,
-    verifyProfileEmail,
   } = useUser();
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -33,8 +32,6 @@ export default function ProfileScreen() {
   const [draftFullName, setDraftFullName] = useState('');
   const [draftEmail, setDraftEmail] = useState('');
   const [draftPhone, setDraftPhone] = useState('');
-  const [emailOtpSent, setEmailOtpSent] = useState(false);
-  const [emailOtp, setEmailOtp] = useState('');
   const [showSignOutAlert, setShowSignOutAlert] = useState(false);
   const user = session?.user;
   const metadataFullName = typeof user?.user_metadata?.full_name === 'string'
@@ -45,7 +42,7 @@ export default function ProfileScreen() {
     : null;
   const fullName = profile?.full_name || metadataFullName || 'LocalFix user';
   const phone = profile?.phone || metadataPhone || 'Not provided';
-  const email = profile?.email || user?.email || 'No email available';
+  const email = user?.email || profile?.email || 'No email available';
   const emailVerified = Boolean(user?.email_confirmed_at);
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
@@ -71,36 +68,12 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleResendEmailOtp = async () => {
-    setBusy(true);
-    setErrorMessage('');
-    try {
-      const result = await updateProfile(draftFullName, draftEmail, draftPhone);
-      if (result.error) {
-        setErrorMessage(result.error.message);
-        return;
-      }
-      if (!result.otpRequired) {
-        setErrorMessage('The email address is already up to date.');
-        return;
-      }
-      setEmailOtp('');
-      setSuccessMessage(`A new verification code was sent to ${draftEmail.trim()}.`);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to resend the verification code.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const startEditing = () => {
     setDraftFullName(fullName === 'LocalFix user' ? '' : fullName);
     setDraftEmail(user?.email ?? email);
     setDraftPhone(profile?.phone ?? metadataPhone ?? '');
     setErrorMessage('');
     setSuccessMessage('');
-    setEmailOtpSent(false);
-    setEmailOtp('');
     setEditing(true);
   };
 
@@ -126,38 +99,16 @@ export default function ProfileScreen() {
     setErrorMessage('');
     setSuccessMessage('');
     try {
-      if (emailOtpSent) {
-        const error = await verifyProfileEmail(
-          normalizedEmail,
-          emailOtp,
-          normalizedName,
-          normalizedPhone,
-        );
-        if (error) {
-          setErrorMessage(error.message);
-          return;
-        }
-
-        setEditing(false);
-        setEmailOtpSent(false);
-        setEmailOtp('');
-        setSuccessMessage('Your email and profile have been updated.');
-        return;
-      }
-
       const result = await updateProfile(normalizedName, normalizedEmail, normalizedPhone);
       if (result.error) {
         setErrorMessage(result.error.message);
         return;
       }
 
-      if (result.otpRequired) {
-        setEmailOtpSent(true);
-        setSuccessMessage(`A verification code was sent to ${normalizedEmail}. Enter it below to confirm the email change.`);
-      } else {
-        setEditing(false);
-        setSuccessMessage('Your profile has been updated.');
-      }
+      setEditing(false);
+      setSuccessMessage(result.emailConfirmationRequired
+        ? `A confirmation link was sent to ${normalizedEmail}. Follow it to finish changing your email.`
+        : 'Your profile has been updated.');
     } catch (error) {
       const details = error instanceof Error ? error.message : 'Unknown error';
       setErrorMessage(`Unable to update your profile: ${details}`);
@@ -255,7 +206,7 @@ export default function ProfileScreen() {
                   accessibilityLabel="Email address"
                   autoCapitalize="none"
                   autoComplete="email"
-                  editable={!busy && !emailOtpSent}
+                  editable={!busy}
                   keyboardType="email-address"
                   onChangeText={setDraftEmail}
                   placeholder="you@example.com"
@@ -280,30 +231,6 @@ export default function ProfileScreen() {
               </View>
             ) : null}
           </View>
-          {editing && emailOtpSent ? (
-            <View style={styles.otpRow}>
-              <TextInput
-                accessibilityLabel="Email verification code"
-                autoComplete="one-time-code"
-                editable={!busy}
-                keyboardType="number-pad"
-                maxLength={6}
-                onChangeText={(value) => setEmailOtp(value.replace(/\D/g, ''))}
-                placeholder="6-digit email code"
-                placeholderTextColor={Colors.light.textSecondary}
-                style={[styles.input, styles.otpInput]}
-                value={emailOtp}
-              />
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={handleResendEmailOtp}
-                style={({ pressed }) => [styles.resendButton, pressed && styles.buttonPressed]}
-              >
-                <Text style={styles.resendText}>Resend</Text>
-              </Pressable>
-            </View>
-          ) : null}
           <View style={styles.divider} />
           <View style={styles.detailRow}>
             <View style={styles.detailIcon}>
@@ -339,8 +266,6 @@ export default function ProfileScreen() {
               onPress={() => {
                 setEditing(false);
                 setErrorMessage('');
-                setEmailOtpSent(false);
-                setEmailOtp('');
               }}
               style={({ pressed }) => [styles.cancelButton, pressed && styles.buttonPressed]}
             >
@@ -348,14 +273,14 @@ export default function ProfileScreen() {
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              disabled={busy || (emailOtpSent && !/^\d{6}$/.test(emailOtp))}
+              disabled={busy}
               onPress={handleSaveProfile}
-              style={({ pressed }) => [styles.saveButton, pressed && styles.buttonPressed, (busy || (emailOtpSent && !/^\d{6}$/.test(emailOtp))) && styles.saveButtonDisabled]}
+              style={({ pressed }) => [styles.saveButton, pressed && styles.buttonPressed, busy && styles.saveButtonDisabled]}
             >
               {busy ? <ActivityIndicator color={Colors.light.text} /> : (
                 <>
                   <MaterialIcons name="check" size={18} color={Colors.light.text} />
-                  <Text style={styles.saveText}>{emailOtpSent ? 'Verify & save' : 'Save changes'}</Text>
+                  <Text style={styles.saveText}>Save changes</Text>
                 </>
               )}
             </Pressable>
@@ -428,10 +353,6 @@ const styles = StyleSheet.create({
   label: { color: Colors.light.textSecondary, fontSize: 11 },
   value: { marginTop: 5, color: Colors.light.text, fontSize: 14, fontWeight: '600' },
   input: { minHeight: 42, marginTop: 4, paddingHorizontal: 10, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 9, color: Colors.light.text, fontSize: 14 },
-  otpRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 49, marginBottom: 10 },
-  otpInput: { flex: 1, marginTop: 0 },
-  resendButton: { minHeight: 38, justifyContent: 'center', paddingHorizontal: 7 },
-  resendText: { color: Colors.light.backgroundSelected, fontSize: 12, fontWeight: '700' },
   status: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 10 },
   statusSuccess: { backgroundColor: '#E8F5EC' },
   statusPending: { backgroundColor: '#FFF4D6' },

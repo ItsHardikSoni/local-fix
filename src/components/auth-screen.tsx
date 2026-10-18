@@ -17,14 +17,13 @@ import { useUser } from '../context/UserContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { supabaseConfigured } from '../lib/supabase';
-import { otpApiConfigured } from '../lib/otp-api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_PATTERN = /^\d{10}$/;
 const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).{8,}$/;
 
 export default function AuthScreen() {
-  const { signIn, signUp, verifySignUpOtp } = useUser();
+  const { signIn, signUp } = useUser();
   const scrollAreaRef = useRef<View>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const focusedInputRef = useRef<TextInput | null>(null);
@@ -40,8 +39,6 @@ export default function AuthScreen() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [signupOtp, setSignupOtp] = useState('');
-  const [signupOtpSent, setSignupOtpSent] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -110,20 +107,16 @@ export default function AuthScreen() {
           setMessage(error.message);
           setIsError(true);
         }
-      } else if (signupOtpSent) {
-        const error = await verifySignUpOtp(email.trim(), signupOtp, password, fullName.trim(), phone.trim());
-        if (error) {
-          setMessage(error.message);
-          setIsError(true);
-        }
       } else {
-        const result = await signUp(email.trim());
+        const result = await signUp(email.trim(), password, fullName.trim(), phone.trim());
         if (result.error) {
           setMessage(result.error.message);
           setIsError(true);
-        } else if (result.otpSent) {
-          setSignupOtpSent(true);
-          setMessage('A six-digit verification code was sent to your email. Enter it below to create your account.');
+        } else if (result.confirmationRequired) {
+          setMode('signIn');
+          setMessage('Your account was created. Check your email for the confirmation link, then sign in.');
+        } else {
+          setMessage('Your account was created successfully.');
         }
       }
     } catch {
@@ -141,7 +134,6 @@ export default function AuthScreen() {
   const canSubmit = isEmailValid && (
     isSignUp
       ? Boolean(fullName.trim()) && isPhoneValid && isPasswordStrong
-        && (!signupOtpSent || /^\d{6}$/.test(signupOtp))
       : Boolean(password)
   );
 
@@ -185,20 +177,12 @@ export default function AuthScreen() {
               Add your Supabase URL and publishable key to the root .env file to enable sign in.
             </Text>
           ) : null}
-          {isSignUp && !otpApiConfigured ? (
-            <Text style={[styles.message, styles.error]}>
-              Set EXPO_PUBLIC_API_URL in the root .env file to enable email verification.
-            </Text>
-          ) : null}
-
           <View style={styles.switcher}>
             <Pressable
               accessibilityRole="tab"
               accessibilityState={{ selected: !isSignUp }}
               onPress={() => {
                 setMode('signIn');
-                setSignupOtpSent(false);
-                setSignupOtp('');
                 setMessage('');
               }}
               style={[styles.switchOption, !isSignUp && styles.switchOptionSelected]}
@@ -210,8 +194,6 @@ export default function AuthScreen() {
               accessibilityState={{ selected: isSignUp }}
               onPress={() => {
                 setMode('signUp');
-                setSignupOtpSent(false);
-                setSignupOtp('');
                 setMessage('');
               }}
               style={[styles.switchOption, isSignUp && styles.switchOptionSelected]}
@@ -258,7 +240,6 @@ export default function AuthScreen() {
             ref={inputRefs.email}
             autoCapitalize="none"
             autoComplete="email"
-            editable={!signupOtpSent}
             keyboardType="email-address"
             onChangeText={setEmail}
             onFocus={() => focusInput(inputRefs.email.current)}
@@ -269,46 +250,6 @@ export default function AuthScreen() {
           />
           {email.length > 0 && !isEmailValid ? (
             <Text style={styles.validation}>Enter a valid email address.</Text>
-          ) : null}
-
-          {isSignUp && signupOtpSent ? (
-            <>
-              <Text style={styles.label}>Email verification code</Text>
-              <TextInput
-                accessibilityLabel="Email verification code"
-                autoComplete="one-time-code"
-                keyboardType="number-pad"
-                maxLength={6}
-                onChangeText={(value) => setSignupOtp(value.replace(/\D/g, ''))}
-                placeholder="6-digit code"
-                placeholderTextColor={Colors.light.textSecondary}
-                style={styles.input}
-                value={signupOtp}
-              />
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={async () => {
-                  setBusy(true);
-                  setMessage('');
-                  try {
-                    const result = await signUp(email.trim());
-                    if (result.error) {
-                      setMessage(result.error.message);
-                      setIsError(true);
-                    } else {
-                      setSignupOtp('');
-                      setMessage('A new verification code was sent to your email.');
-                    }
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-                style={styles.changeEmailButton}
-              >
-                <Text style={styles.changeEmailText}>Resend code</Text>
-              </Pressable>
-            </>
           ) : null}
 
           <Text style={styles.label}>Password</Text>
@@ -368,9 +309,7 @@ export default function AuthScreen() {
             {busy ? <ActivityIndicator color={Colors.light.text} /> : (
               <Text style={styles.submitText}>
                 {isSignUp
-                  ? signupOtpSent
-                    ? 'Verify code & create account'
-                    : 'Send verification code'
+                  ? 'Create account'
                   : 'Sign in'}
               </Text>
             )}
@@ -461,8 +400,6 @@ const styles = StyleSheet.create({
   },
   message: { marginBottom: 14, color: '#24734A', fontSize: 13, lineHeight: 19 },
   error: { color: '#B42318' },
-  changeEmailButton: { alignSelf: 'flex-end', marginTop: -8, marginBottom: 10, paddingVertical: 6 },
-  changeEmailText: { color: Colors.light.backgroundSelected, fontSize: 12, fontWeight: '600' },
   submit: {
     minHeight: 52,
     alignItems: 'center',
