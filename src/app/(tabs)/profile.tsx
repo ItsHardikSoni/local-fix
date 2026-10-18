@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -11,6 +11,16 @@ import {
 import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { Colors } from '../../constants/theme';
 import { useUser } from '../../context/UserContext';
+import { useLocation } from '../../context/LocationContext';
+import StateDistrictPicker from '../../components/state-district-picker';
+import {
+  loadAddressOptions,
+  loadLatestCustomerAddress,
+  saveCustomerAddress,
+  type CustomerAddress,
+  type DistrictOption,
+  type StateOption,
+} from '../../lib/customer-addresses';
 import ThemedAlert from '../../components/ui/themed-alert';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -25,6 +35,7 @@ export default function ProfileScreen() {
     signOut,
     updateProfile,
   } = useUser();
+  const { location } = useLocation();
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -33,6 +44,25 @@ export default function ProfileScreen() {
   const [draftEmail, setDraftEmail] = useState('');
   const [draftPhone, setDraftPhone] = useState('');
   const [showSignOutAlert, setShowSignOutAlert] = useState(false);
+  const [addressId, setAddressId] = useState<string | null>(null);
+  const [addressLine, setAddressLine] = useState('');
+  const [addressSociety, setAddressSociety] = useState('');
+  const [addressFlat, setAddressFlat] = useState('');
+  const [addressStateName, setAddressStateName] = useState('');
+  const [addressDistrictId, setAddressDistrictId] = useState('');
+  const [addressCoordinates, setAddressCoordinates] = useState<{
+    latitude: number | null;
+    longitude: number | null;
+  }>({ latitude: null, longitude: null });
+  const [savedAddress, setSavedAddress] = useState<CustomerAddress | null>(null);
+  const [states, setStates] = useState<StateOption[]>([]);
+  const [districts, setDistricts] = useState<DistrictOption[]>([]);
+  const [addressLoading, setAddressLoading] = useState(true);
+  const [addressSaving, setAddressSaving] = useState(false);
+  const [addressEditing, setAddressEditing] = useState(false);
+  const [addressError, setAddressError] = useState('');
+  const [addressSuccess, setAddressSuccess] = useState('');
+  const [addressAttemptedSave, setAddressAttemptedSave] = useState(false);
   const user = session?.user;
   const metadataFullName = typeof user?.user_metadata?.full_name === 'string'
     ? user.user_metadata.full_name
@@ -47,6 +77,93 @@ export default function ProfileScreen() {
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
     : null;
+  const addressDistrictName = districts.find((item) => item.id === addressDistrictId)?.district_name;
+
+  useEffect(() => {
+    const customerId = user?.id;
+    if (!customerId) {
+      setAddressLoading(false);
+      setAddressError('Sign in to manage your service address.');
+      return;
+    }
+
+    let active = true;
+    const loadAddress = async () => {
+      setAddressLoading(true);
+      setAddressError('');
+      const [options, savedAddress] = await Promise.all([
+        loadAddressOptions(),
+        loadLatestCustomerAddress(customerId),
+      ]);
+      if (!active) return;
+
+      setStates(options.states);
+      setDistricts(options.districts);
+      if (savedAddress) {
+        const district = options.districts.find((item) => item.id === savedAddress.district_id);
+        setSavedAddress(savedAddress);
+        setAddressId(savedAddress.id);
+        setAddressLine(savedAddress.address_line);
+        setAddressSociety(savedAddress.society_name ?? '');
+        setAddressFlat(savedAddress.flat_number ?? '');
+        setAddressDistrictId(savedAddress.district_id);
+        setAddressStateName(district?.state_name ?? '');
+        setAddressCoordinates({
+          latitude: savedAddress.latitude,
+          longitude: savedAddress.longitude,
+        });
+      }
+      setAddressLoading(false);
+    };
+
+    void loadAddress().catch((error: unknown) => {
+      if (!active) return;
+      setAddressError(error instanceof Error ? error.message : 'Unable to load your address.');
+      setAddressLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+
+  const handleSaveAddress = async () => {
+    setAddressAttemptedSave(true);
+    setAddressError('');
+    setAddressSuccess('');
+    if (!addressLine.trim() || !addressStateName || !addressDistrictId || !user?.id) return;
+
+    setAddressSaving(true);
+    try {
+      const latitude = location?.coords.latitude ?? addressCoordinates.latitude;
+      const longitude = location?.coords.longitude ?? addressCoordinates.longitude;
+      const savedId = await saveCustomerAddress(user.id, addressId, {
+        district_id: addressDistrictId,
+        address_line: addressLine.trim(),
+        society_name: addressSociety.trim() || null,
+        flat_number: addressFlat.trim() || null,
+        latitude,
+        longitude,
+      });
+      setAddressId(savedId);
+      setSavedAddress({
+        id: savedId,
+        district_id: addressDistrictId,
+        address_line: addressLine.trim(),
+        society_name: addressSociety.trim() || null,
+        flat_number: addressFlat.trim() || null,
+        latitude,
+        longitude,
+      });
+      setAddressCoordinates({ latitude, longitude });
+      setAddressEditing(false);
+      setAddressAttemptedSave(false);
+      setAddressSuccess('Your service address has been saved.');
+    } catch (error) {
+      setAddressError(error instanceof Error ? error.message : 'Unable to save your address.');
+    } finally {
+      setAddressSaving(false);
+    }
+  };
 
   const handleSignOut = async () => {
     setBusy(true);
@@ -287,6 +404,145 @@ export default function ProfileScreen() {
           </View>
         ) : null}
 
+        <View style={styles.addressHeading}>
+          <View>
+            <Text style={styles.sectionTitle}>Service address</Text>
+            <Text style={styles.addressCaption}>The address technicians should visit</Text>
+          </View>
+          {!addressEditing && !addressLoading ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={addressSaving}
+              onPress={() => {
+                setAddressError('');
+                setAddressSuccess('');
+                setAddressAttemptedSave(false);
+                setAddressEditing(true);
+              }}
+              style={styles.editButton}
+            >
+              <MaterialIcons name={addressId ? 'edit' : 'add'} size={16} color={Colors.light.backgroundSelected} />
+              <Text style={styles.editButtonText}>{addressId ? 'Edit' : 'Add address'}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <View style={styles.addressCard}>
+          {addressLoading ? (
+            <View style={styles.loading}>
+              <ActivityIndicator color={Colors.light.backgroundSelected} />
+              <Text style={styles.loadingText}>Loading your address…</Text>
+            </View>
+          ) : addressEditing ? (
+            <>
+              <Text style={styles.label}>Street address</Text>
+              <TextInput
+                accessibilityLabel="Street address"
+                autoCapitalize="words"
+                editable={!addressSaving}
+                maxLength={500}
+                onChangeText={setAddressLine}
+                placeholder="House number, street, and area"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={addressLine}
+              />
+              {addressAttemptedSave && !addressLine.trim() ? (
+                <Text style={styles.error}>Enter your street address.</Text>
+              ) : null}
+              <StateDistrictPicker
+                districts={districts}
+                districtError={addressAttemptedSave && !addressDistrictId}
+                districtId={addressDistrictId}
+                onDistrictChange={setAddressDistrictId}
+                onStateChange={(nextStateId) => {
+                  setAddressStateName(nextStateId);
+                  setAddressDistrictId('');
+                }}
+                stateError={addressAttemptedSave && !addressStateName}
+                stateName={addressStateName}
+                states={states}
+              />
+              <Text style={styles.label}>Society / Apartment (optional)</Text>
+              <TextInput
+                accessibilityLabel="Society or apartment"
+                autoCapitalize="words"
+                editable={!addressSaving}
+                maxLength={160}
+                onChangeText={setAddressSociety}
+                placeholder="Society or apartment name"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={addressSociety}
+              />
+              <Text style={styles.label}>Flat / House number (optional)</Text>
+              <TextInput
+                accessibilityLabel="Flat or house number"
+                autoCapitalize="characters"
+                editable={!addressSaving}
+                maxLength={80}
+                onChangeText={setAddressFlat}
+                placeholder="Flat or house number"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={addressFlat}
+              />
+              <View style={styles.addressActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={addressSaving}
+                  onPress={() => {
+                    const restoredDistrict = savedAddress
+                      ? districts.find((item) => item.id === savedAddress.district_id)
+                      : undefined;
+                    setAddressId(savedAddress?.id ?? null);
+                    setAddressLine(savedAddress?.address_line ?? '');
+                    setAddressSociety(savedAddress?.society_name ?? '');
+                    setAddressFlat(savedAddress?.flat_number ?? '');
+                    setAddressDistrictId(savedAddress?.district_id ?? '');
+                    setAddressStateName(restoredDistrict?.state_name ?? '');
+                    setAddressCoordinates({
+                      latitude: savedAddress?.latitude ?? null,
+                      longitude: savedAddress?.longitude ?? null,
+                    });
+                    setAddressEditing(false);
+                    setAddressError('');
+                    setAddressAttemptedSave(false);
+                  }}
+                  style={styles.cancelButton}
+                >
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={addressSaving}
+                  onPress={handleSaveAddress}
+                  style={[styles.saveButton, addressSaving && styles.saveButtonDisabled]}
+                >
+                  {addressSaving ? <ActivityIndicator color={Colors.light.text} /> : (
+                    <>
+                      <MaterialIcons name="check" size={18} color={Colors.light.text} />
+                      <Text style={styles.saveText}>Save address</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            </>
+          ) : addressId ? (
+            <>
+              <Text style={styles.addressValue}>{addressLine}</Text>
+              {addressFlat ? <Text style={styles.addressDetail}>Flat / House {addressFlat}</Text> : null}
+              {addressSociety ? <Text style={styles.addressDetail}>{addressSociety}</Text> : null}
+              <Text style={styles.addressDetail}>
+                {[addressDistrictName, addressStateName].filter(Boolean).join(', ')}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.addressCaption}>No service address saved yet.</Text>
+          )}
+          {addressError ? <Text accessibilityRole="alert" style={styles.error}>{addressError}</Text> : null}
+          {addressSuccess ? <Text accessibilityRole="summary" style={styles.success}>{addressSuccess}</Text> : null}
+        </View>
+
         <View style={styles.securityNote}>
           <MaterialIcons name="shield" size={20} color={Colors.light.backgroundSelected} />
           <View style={styles.securityCopy}>
@@ -347,6 +603,12 @@ const styles = StyleSheet.create({
   editButtonPressed: { opacity: 0.8 },
   editButtonText: { color: Colors.light.backgroundSelected, fontSize: 13, fontWeight: '700' },
   detailsCard: { marginHorizontal: 20, paddingHorizontal: 15, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
+  addressHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 24, marginBottom: 11 },
+  addressCaption: { marginTop: 4, color: Colors.light.textSecondary, fontSize: 12 },
+  addressCard: { marginHorizontal: 20, padding: 15, borderRadius: 16, backgroundColor: Colors.light.backgroundElement },
+  addressValue: { color: Colors.light.text, fontSize: 14, fontWeight: '700', lineHeight: 21 },
+  addressDetail: { marginTop: 5, color: Colors.light.textSecondary, fontSize: 13 },
+  addressActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   detailRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 13 },
   detailIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFF2DE' },
   detailCopy: { flex: 1 },

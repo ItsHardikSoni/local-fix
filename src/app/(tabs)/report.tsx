@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -16,22 +15,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useLocation } from '../../context/LocationContext';
 import { useUser } from '../../context/UserContext';
-import { supabase, supabaseConfigured } from '../../lib/supabase';
-
-type DistrictOption = {
-  id: string;
-  district_name: string;
-};
-
-type CustomerAddress = {
-  id: string;
-  district_id: string;
-  address_line: string;
-  society_name: string | null;
-  flat_number: string | null;
-  latitude: number | null;
-  longitude: number | null;
-};
+import StateDistrictPicker from '../../components/state-district-picker';
+import {
+  loadAddressOptions,
+  loadLatestCustomerAddress,
+  saveCustomerAddress,
+  type DistrictOption,
+  type StateOption,
+} from '../../lib/customer-addresses';
+import { supabaseConfigured } from '../../lib/supabase';
 
 const issueTypes = [
   { label: 'Water leak', icon: 'water-drop' as const },
@@ -48,11 +40,13 @@ export default function Report() {
   const [type, setType] = useState('Water leak');
   const [desc, setDesc] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
+  const [states, setStates] = useState<StateOption[]>([]);
   const [districts, setDistricts] = useState<DistrictOption[]>([]);
   const [addressId, setAddressId] = useState<string | null>(null);
   const [addressLine, setAddressLine] = useState('');
   const [societyName, setSocietyName] = useState('');
   const [flatNumber, setFlatNumber] = useState('');
+  const [stateName, setStateName] = useState('');
   const [districtId, setDistrictId] = useState('');
   const [savedAddressCoordinates, setSavedAddressCoordinates] = useState<{
     latitude: number | null;
@@ -61,7 +55,6 @@ export default function Report() {
   const [addressLoading, setAddressLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [addressError, setAddressError] = useState('');
-  const [districtPickerVisible, setDistrictPickerVisible] = useState(false);
 
   useEffect(() => {
     const customerId = session?.user.id;
@@ -74,45 +67,25 @@ export default function Report() {
     }
 
     let active = true;
-    const loadAddressOptions = async () => {
+    const loadAddressData = async () => {
       setAddressLoading(true);
       setAddressError('');
 
-      const [districtResult, addressResult] = await Promise.all([
-        supabase
-          .from('districts')
-          .select('id, district_name')
-          .order('district_name')
-          .returns<DistrictOption[]>(),
-        supabase
-          .from('customer_addresses')
-          .select('id, district_id, address_line, society_name, flat_number, latitude, longitude')
-          .eq('customer_id', customerId)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .returns<CustomerAddress[]>(),
+      const [options, savedAddress] = await Promise.all([
+        loadAddressOptions(),
+        loadLatestCustomerAddress(customerId),
       ]);
 
       if (!active) return;
-      if (districtResult.error) {
-        setAddressError(`Unable to load districts: ${districtResult.error.message}`);
-        setAddressLoading(false);
-        return;
-      }
-      if (addressResult.error) {
-        setAddressError(`Unable to load your saved address: ${addressResult.error.message}`);
-        setAddressLoading(false);
-        return;
-      }
-
-      setDistricts(districtResult.data);
-      const savedAddress = addressResult.data[0];
+      setStates(options.states);
+      setDistricts(options.districts);
       if (savedAddress) {
         setAddressId(savedAddress.id);
         setAddressLine(savedAddress.address_line);
         setSocietyName(savedAddress.society_name ?? '');
         setFlatNumber(savedAddress.flat_number ?? '');
         setDistrictId(savedAddress.district_id);
+        setStateName(options.districts.find((item) => item.id === savedAddress.district_id)?.state_name ?? '');
         setSavedAddressCoordinates({
           latitude: savedAddress.latitude,
           longitude: savedAddress.longitude,
@@ -121,7 +94,7 @@ export default function Report() {
       setAddressLoading(false);
     };
 
-    void loadAddressOptions().catch((error: unknown) => {
+    void loadAddressData().catch((error: unknown) => {
       if (!active) return;
       const details = error instanceof Error ? error.message : 'Unexpected network error';
       setAddressError(`Unable to load address information: ${details}`);
@@ -138,7 +111,10 @@ export default function Report() {
     const match = districts.find((item) => (
       item.district_name.toLowerCase() === currentDistrict.toLowerCase()
     ));
-    if (match) setDistrictId(match.id);
+    if (match?.state_name) {
+      setStateName(match.state_name);
+      setDistrictId(match.id);
+    }
   }, [currentDistrict, districtId, districts]);
 
   useEffect(() => {
@@ -150,12 +126,13 @@ export default function Report() {
   const typeError = attemptedSubmit && !type.trim();
   const descriptionError = attemptedSubmit && desc.trim().length < 8;
   const addressLineError = attemptedSubmit && !addressLine.trim();
+  const stateError = attemptedSubmit && !stateName;
   const districtError = attemptedSubmit && !districtId;
 
   const onSubmit = async () => {
     setAttemptedSubmit(true);
     if (!type.trim() || desc.trim().length < 8) return;
-    if (!addressLine.trim() || !districtId) return;
+    if (!addressLine.trim() || !stateName || !districtId) return;
     if (!session?.user.id || !supabaseConfigured) {
       setAddressError('Sign in and configure Supabase before saving your address.');
       return;
@@ -167,36 +144,15 @@ export default function Report() {
       const currentLocation = await refreshLocation() ?? location;
       const latitude = currentLocation?.coords.latitude ?? savedAddressCoordinates.latitude;
       const longitude = currentLocation?.coords.longitude ?? savedAddressCoordinates.longitude;
-      const addressValues = {
-        customer_id: session.user.id,
+      const savedId = await saveCustomerAddress(session.user.id, addressId, {
         district_id: districtId,
         address_line: addressLine.trim(),
         society_name: societyName.trim() || null,
         flat_number: flatNumber.trim() || null,
         latitude,
         longitude,
-        updated_at: new Date().toISOString(),
-      };
-
-      const addressResult = addressId
-        ? await supabase
-          .from('customer_addresses')
-          .update(addressValues)
-          .eq('id', addressId)
-          .eq('customer_id', session.user.id)
-          .select('id')
-          .single()
-        : await supabase
-          .from('customer_addresses')
-          .insert(addressValues)
-          .select('id')
-          .single();
-
-      if (addressResult.error) {
-        setAddressError(`Unable to save your address: ${addressResult.error.message}`);
-        return;
-      }
-      setAddressId(addressResult.data.id);
+      });
+      setAddressId(savedId);
       setSavedAddressCoordinates({ latitude, longitude });
 
       router.push({
@@ -318,9 +274,11 @@ export default function Report() {
                   setAddressLine('');
                   setSocietyName('');
                   setFlatNumber('');
-                  setDistrictId(districts.find((item) => (
+                  const matchedDistrict = districts.find((item) => (
                     item.district_name.toLowerCase() === currentDistrict?.toLowerCase()
-                  ))?.id ?? '');
+                  ));
+                  setStateName(matchedDistrict?.state_name ?? '');
+                  setDistrictId(matchedDistrict?.id ?? '');
                   setSavedAddressCoordinates({ latitude: null, longitude: null });
                 }}
               >
@@ -352,24 +310,19 @@ export default function Report() {
               />
               {addressLineError ? <Text style={styles.errorText}>Enter your street address.</Text> : null}
 
-              <Text style={styles.label}>District</Text>
-              <Pressable
-                accessibilityLabel="Choose district"
-                accessibilityRole="button"
-                accessibilityState={{ disabled: districts.length === 0 }}
-                disabled={districts.length === 0}
-                onPress={() => setDistrictPickerVisible(true)}
-                style={[styles.districtSelect, districtError && styles.inputError]}
-              >
-                <Text style={[styles.districtSelectText, !districtId && styles.placeholder]}>
-                  {districts.find((item) => item.id === districtId)?.district_name ?? 'Select your district'}
-                </Text>
-                <MaterialIcons name="arrow-drop-down" size={24} color={Colors.light.textSecondary} />
-              </Pressable>
-              {districtError ? <Text style={styles.errorText}>Choose your district.</Text> : null}
-              {districts.length === 0 && !addressError ? (
-                <Text style={styles.errorText}>No districts are available to choose.</Text>
-              ) : null}
+              <StateDistrictPicker
+                districts={districts}
+                districtError={districtError}
+                districtId={districtId}
+                onDistrictChange={setDistrictId}
+                onStateChange={(nextStateId) => {
+                  setStateName(nextStateId);
+                  setDistrictId('');
+                }}
+                stateError={stateError}
+                stateName={stateName}
+                states={states}
+              />
 
               <Text style={styles.label}>Society / Apartment (optional)</Text>
               <TextInput
@@ -436,47 +389,6 @@ export default function Report() {
         </Pressable>
       </View>
 
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setDistrictPickerVisible(false)}
-        transparent
-        visible={districtPickerVisible}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.districtSheet}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Choose your district</Text>
-              <Pressable
-                accessibilityLabel="Close district selector"
-                accessibilityRole="button"
-                onPress={() => setDistrictPickerVisible(false)}
-                hitSlop={8}
-              >
-                <MaterialIcons name="close" size={23} color={Colors.light.text} />
-              </Pressable>
-            </View>
-            <ScrollView>
-              {districts.map((item) => (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: districtId === item.id }}
-                  key={item.id}
-                  onPress={() => {
-                    setDistrictId(item.id);
-                    setDistrictPickerVisible(false);
-                  }}
-                  style={styles.districtOption}
-                >
-                  <Text style={styles.districtOptionText}>{item.district_name}</Text>
-                  {districtId === item.id ? (
-                    <MaterialIcons name="check" size={20} color={Colors.light.backgroundSelected} />
-                  ) : null}
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -510,9 +422,6 @@ const styles = StyleSheet.create({
   typeChipTextSelected: { color: Colors.light.text },
   input: { minHeight: 52, marginBottom: 17, paddingHorizontal: 14, paddingVertical: 13, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 12, backgroundColor: Colors.light.backgroundElement, color: Colors.light.text, fontSize: 15 },
   inputError: { borderColor: '#B42318' },
-  districtSelect: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 17, paddingHorizontal: 14, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 12, backgroundColor: Colors.light.backgroundElement },
-  districtSelectText: { color: Colors.light.text, fontSize: 15 },
-  placeholder: { color: Colors.light.textSecondary },
   descriptionLabel: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   counter: { marginBottom: 9, color: Colors.light.textSecondary, fontSize: 12 },
   descriptionInput: { minHeight: 132, marginBottom: 7, lineHeight: 21 },
@@ -528,10 +437,4 @@ const styles = StyleSheet.create({
   submitDisabled: { opacity: 0.65 },
   submitText: { color: Colors.light.text, fontSize: 15, fontWeight: '700' },
   pressed: { opacity: 0.82 },
-  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(12,27,51,0.45)' },
-  districtSheet: { maxHeight: '75%', paddingTop: 20, paddingBottom: 28, paddingHorizontal: 20, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: Colors.light.background },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  sheetTitle: { color: Colors.light.text, fontSize: 18, fontWeight: '700' },
-  districtOption: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D8E0E9' },
-  districtOptionText: { color: Colors.light.text, fontSize: 15 },
 });
