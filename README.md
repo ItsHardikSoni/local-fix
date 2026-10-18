@@ -25,7 +25,7 @@ In the output, you'll find options to open the app in a
 
 ## Supabase Authentication
 
-Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the root `.env` using the project URL and publishable/anon key from your Supabase API settings. The `.env` file is ignored by Git. Restart Expo after changing these values.
+Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the root `.env` using the project URL and publishable/anon key from your Supabase API settings. Use the project base URL (for example, `https://<project-ref>.supabase.co`), without `/rest/v1/`. The `.env` file is ignored by Git. Restart Expo after changing these values.
 
 Run [`supabase/profiles.sql`](supabase/profiles.sql) in the Supabase SQL editor after creating the `public.profiles` table. It creates a profile when an auth user signs up, allows authenticated users to read only their own profile, and adds the table to the `supabase_realtime` publication. The profile screen fetches the signed-in user's row and listens for changes to it. Sign-up collects full name and optional phone; email comes from Supabase Auth, and the table defaults supply status and timestamps.
 
@@ -34,18 +34,27 @@ Email/password sign-in uses Supabase Auth. New accounts are created on the OTP A
 ### OTP API setup
 
 1. In the Supabase SQL editor, run [`supabase/migrations/001_email_otp_challenges.sql`](supabase/migrations/001_email_otp_challenges.sql).
-2. Fill in the root `.env` using [`.env.example`](.env.example). The `EXPO_PUBLIC_` values are for the mobile app; the SMTP credentials and Supabase service-role key are read only by the Node API and must never use the `EXPO_PUBLIC_` prefix. `.env` is ignored by Git.
-3. Install and run the Node API from the repository root:
+2. Fill in the root `.env`. Set both `EXPO_PUBLIC_SUPABASE_URL` and server-only `SUPABASE_URL` to the Supabase project base URL (without `/rest/v1/`). The `EXPO_PUBLIC_` values are bundled into the mobile app; SMTP credentials and the Supabase service-role key are read only by the Node API and must never use that prefix. `.env` is ignored by Git.
+3. For local development only, install and run the Node API from the repository root:
 
    ```sh
    npm install
    npm run api:dev
    ```
 
-4. Set `EXPO_PUBLIC_API_URL` in the root `.env` to the API URL. For a physical device, use a reachable LAN or deployed HTTPS URL instead of `localhost`. `CORS_ORIGINS` in the server environment must include your Expo web origin when using the web app.
-5. Deploy the Node service behind HTTPS before using it outside local development. Keep the service-role key and SMTP password in the host’s private environment settings.
+4. Deploy the API to Railway:
+   - Create a Railway project from this repository and deploy the repository root. [`railway.json`](railway.json) starts the API and configures its `/health` health check.
+   - In the Railway API service Variables, set `SUPABASE_URL` to the Supabase project base URL (without `/rest/v1/`), plus `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, and `OTP_HASH_SECRET`. Never use the `EXPO_PUBLIC_` prefix for these server secrets. Railway provides `PORT`.
+   - Generate a public Railway domain for the API service in its Networking settings.
+   - Set `EXPO_PUBLIC_API_URL` in the app's root `.env` to that public `https://` URL (no trailing slash). Check `<EXPO_PUBLIC_API_URL>/health` returns `{"status":"ok"}`.
+   - Keep `CORS_ORIGINS` unset for native iOS/Android apps; they do not use browser CORS. Configure it only if you later enable the Expo web app, using the exact web origin.
+   - Restart Expo after changing `.env`:
 
-The Expo app and Node API are maintained in this one project and share its root package manifest. They run as separate processes: the app runs with `npx expo start`, and the API runs with `npm run api:dev`. The server-only secrets are not bundled into the mobile app.
+   ```sh
+   npx expo start --clear
+   ```
+
+The Expo app and Node API are maintained in this one project and share its root package manifest. They run as separate processes: the app runs with `npx expo start`, while Railway runs the deployed API. The server-only secrets are not bundled into the mobile app.
 
 The API limits code requests to five per email and purpose per 24 hours, applies a one-minute resend delay, expires codes after 10 minutes, and allows at most five verification attempts per code. Run `npm run test:api` for the OTP utility tests. Profile name and phone edits are synchronized to Supabase Auth metadata and `public.profiles`.
 
