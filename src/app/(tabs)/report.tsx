@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -13,6 +15,23 @@ import { MaterialIcons } from '@react-native-vector-icons/material-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { useLocation } from '../../context/LocationContext';
+import { useUser } from '../../context/UserContext';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
+
+type DistrictOption = {
+  id: string;
+  district_name: string;
+};
+
+type CustomerAddress = {
+  id: string;
+  district_id: string;
+  address_line: string;
+  society_name: string | null;
+  flat_number: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
 
 const issueTypes = [
   { label: 'Water leak', icon: 'water-drop' as const },
@@ -23,11 +42,104 @@ const issueTypes = [
 
 export default function Report() {
   const router = useRouter();
-  const { location, locationLoading, locationError, refreshLocation } = useLocation();
+  const { location, district: currentDistrict, locationLoading, locationError, refreshLocation } = useLocation();
+  const { session } = useUser();
   const { type: initialType } = useLocalSearchParams<{ type?: string }>();
   const [type, setType] = useState('Water leak');
   const [desc, setDesc] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
+  const [districts, setDistricts] = useState<DistrictOption[]>([]);
+  const [addressId, setAddressId] = useState<string | null>(null);
+  const [addressLine, setAddressLine] = useState('');
+  const [societyName, setSocietyName] = useState('');
+  const [flatNumber, setFlatNumber] = useState('');
+  const [districtId, setDistrictId] = useState('');
+  const [savedAddressCoordinates, setSavedAddressCoordinates] = useState<{
+    latitude: number | null;
+    longitude: number | null;
+  }>({ latitude: null, longitude: null });
+  const [addressLoading, setAddressLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [addressError, setAddressError] = useState('');
+  const [districtPickerVisible, setDistrictPickerVisible] = useState(false);
+
+  useEffect(() => {
+    const customerId = session?.user.id;
+    if (!customerId || !supabaseConfigured) {
+      setAddressLoading(false);
+      setAddressError(!customerId
+        ? 'Sign in before adding a service address.'
+        : 'Supabase is not configured. Check the app settings.');
+      return;
+    }
+
+    let active = true;
+    const loadAddressOptions = async () => {
+      setAddressLoading(true);
+      setAddressError('');
+
+      const [districtResult, addressResult] = await Promise.all([
+        supabase
+          .from('districts')
+          .select('id, district_name')
+          .order('district_name')
+          .returns<DistrictOption[]>(),
+        supabase
+          .from('customer_addresses')
+          .select('id, district_id, address_line, society_name, flat_number, latitude, longitude')
+          .eq('customer_id', customerId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .returns<CustomerAddress[]>(),
+      ]);
+
+      if (!active) return;
+      if (districtResult.error) {
+        setAddressError(`Unable to load districts: ${districtResult.error.message}`);
+        setAddressLoading(false);
+        return;
+      }
+      if (addressResult.error) {
+        setAddressError(`Unable to load your saved address: ${addressResult.error.message}`);
+        setAddressLoading(false);
+        return;
+      }
+
+      setDistricts(districtResult.data);
+      const savedAddress = addressResult.data[0];
+      if (savedAddress) {
+        setAddressId(savedAddress.id);
+        setAddressLine(savedAddress.address_line);
+        setSocietyName(savedAddress.society_name ?? '');
+        setFlatNumber(savedAddress.flat_number ?? '');
+        setDistrictId(savedAddress.district_id);
+        setSavedAddressCoordinates({
+          latitude: savedAddress.latitude,
+          longitude: savedAddress.longitude,
+        });
+      }
+      setAddressLoading(false);
+    };
+
+    void loadAddressOptions().catch((error: unknown) => {
+      if (!active) return;
+      const details = error instanceof Error ? error.message : 'Unexpected network error';
+      setAddressError(`Unable to load address information: ${details}`);
+      setAddressLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [session?.user.id]);
+
+  useEffect(() => {
+    if (districtId || !currentDistrict || districts.length === 0) return;
+    const match = districts.find((item) => (
+      item.district_name.toLowerCase() === currentDistrict.toLowerCase()
+    ));
+    if (match) setDistrictId(match.id);
+  }, [currentDistrict, districtId, districts]);
 
   useEffect(() => {
     if (typeof initialType === 'string' && initialType.trim()) {
@@ -37,23 +149,71 @@ export default function Report() {
 
   const typeError = attemptedSubmit && !type.trim();
   const descriptionError = attemptedSubmit && desc.trim().length < 8;
+  const addressLineError = attemptedSubmit && !addressLine.trim();
+  const districtError = attemptedSubmit && !districtId;
 
   const onSubmit = async () => {
     setAttemptedSubmit(true);
     if (!type.trim() || desc.trim().length < 8) return;
+    if (!addressLine.trim() || !districtId) return;
+    if (!session?.user.id || !supabaseConfigured) {
+      setAddressError('Sign in and configure Supabase before saving your address.');
+      return;
+    }
 
-    const currentLocation = await refreshLocation();
-    if (!currentLocation) return;
+    setSaving(true);
+    setAddressError('');
+    try {
+      const currentLocation = await refreshLocation() ?? location;
+      const latitude = currentLocation?.coords.latitude ?? savedAddressCoordinates.latitude;
+      const longitude = currentLocation?.coords.longitude ?? savedAddressCoordinates.longitude;
+      const addressValues = {
+        customer_id: session.user.id,
+        district_id: districtId,
+        address_line: addressLine.trim(),
+        society_name: societyName.trim() || null,
+        flat_number: flatNumber.trim() || null,
+        latitude,
+        longitude,
+        updated_at: new Date().toISOString(),
+      };
 
-    router.push({
-      pathname: '/technicians',
-      params: {
-        type: type.trim(),
-        desc: desc.trim(),
-        latitude: String(currentLocation.coords.latitude),
-        longitude: String(currentLocation.coords.longitude),
-      },
-    });
+      const addressResult = addressId
+        ? await supabase
+          .from('customer_addresses')
+          .update(addressValues)
+          .eq('id', addressId)
+          .eq('customer_id', session.user.id)
+          .select('id')
+          .single()
+        : await supabase
+          .from('customer_addresses')
+          .insert(addressValues)
+          .select('id')
+          .single();
+
+      if (addressResult.error) {
+        setAddressError(`Unable to save your address: ${addressResult.error.message}`);
+        return;
+      }
+      setAddressId(addressResult.data.id);
+      setSavedAddressCoordinates({ latitude, longitude });
+
+      router.push({
+        pathname: '/technicians',
+        params: {
+          type: type.trim(),
+          desc: desc.trim(),
+          latitude: latitude === null ? '' : String(latitude),
+          longitude: longitude === null ? '' : String(longitude),
+        },
+      });
+    } catch (error) {
+      const details = error instanceof Error ? error.message : 'Unexpected network error';
+      setAddressError(`Unable to save your address: ${details}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -148,6 +308,96 @@ export default function Report() {
             <Text style={styles.helperText}>Avoid sharing personal or sensitive information.</Text>
           )}
 
+          <View style={styles.addressHeader}>
+            <Text style={styles.sectionTitle}>Where should the technician visit?</Text>
+            {addressId ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setAddressId(null);
+                  setAddressLine('');
+                  setSocietyName('');
+                  setFlatNumber('');
+                  setDistrictId(districts.find((item) => (
+                    item.district_name.toLowerCase() === currentDistrict?.toLowerCase()
+                  ))?.id ?? '');
+                  setSavedAddressCoordinates({ latitude: null, longitude: null });
+                }}
+              >
+                <Text style={styles.addAddressText}>Add another</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <Text style={styles.addressHelper}>
+            {addressId ? 'Your saved address is filled in. You can update it or add another.' : 'Add your service address. Your GPS coordinates are included when available.'}
+          </Text>
+
+          {addressLoading ? (
+            <View style={styles.addressLoading}>
+              <ActivityIndicator color={Colors.light.backgroundSelected} />
+              <Text style={styles.addressHelper}>Loading your address and districts…</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.label}>Address</Text>
+              <TextInput
+                accessibilityLabel="Address"
+                autoCapitalize="words"
+                maxLength={500}
+                onChangeText={setAddressLine}
+                placeholder="House number, street, and area"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={[styles.input, addressLineError && styles.inputError]}
+                value={addressLine}
+              />
+              {addressLineError ? <Text style={styles.errorText}>Enter your street address.</Text> : null}
+
+              <Text style={styles.label}>District</Text>
+              <Pressable
+                accessibilityLabel="Choose district"
+                accessibilityRole="button"
+                accessibilityState={{ disabled: districts.length === 0 }}
+                disabled={districts.length === 0}
+                onPress={() => setDistrictPickerVisible(true)}
+                style={[styles.districtSelect, districtError && styles.inputError]}
+              >
+                <Text style={[styles.districtSelectText, !districtId && styles.placeholder]}>
+                  {districts.find((item) => item.id === districtId)?.district_name ?? 'Select your district'}
+                </Text>
+                <MaterialIcons name="arrow-drop-down" size={24} color={Colors.light.textSecondary} />
+              </Pressable>
+              {districtError ? <Text style={styles.errorText}>Choose your district.</Text> : null}
+              {districts.length === 0 && !addressError ? (
+                <Text style={styles.errorText}>No districts are available to choose.</Text>
+              ) : null}
+
+              <Text style={styles.label}>Society / Apartment (optional)</Text>
+              <TextInput
+                accessibilityLabel="Society or apartment"
+                autoCapitalize="words"
+                maxLength={160}
+                onChangeText={setSocietyName}
+                placeholder="Society or apartment name"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={societyName}
+              />
+
+              <Text style={styles.label}>Flat / House number (optional)</Text>
+              <TextInput
+                accessibilityLabel="Flat or house number"
+                autoCapitalize="characters"
+                maxLength={80}
+                onChangeText={setFlatNumber}
+                placeholder="Flat or house number"
+                placeholderTextColor={Colors.light.textSecondary}
+                style={styles.input}
+                value={flatNumber}
+              />
+            </>
+          )}
+          {addressError ? <Text accessibilityRole="alert" style={styles.errorText}>{addressError}</Text> : null}
+
           <View style={styles.locationStatus}>
             <MaterialIcons
               name={locationLoading ? 'my-location' : location ? 'location-on' : 'location-off'}
@@ -176,13 +426,57 @@ export default function Report() {
         <Pressable
           accessibilityRole="button"
           onPress={onSubmit}
-          disabled={locationLoading}
-          style={({ pressed }) => [styles.submit, pressed && styles.pressed]}
+          disabled={locationLoading || addressLoading || saving}
+          style={({ pressed }) => [styles.submit, pressed && styles.pressed, (locationLoading || addressLoading || saving) && styles.submitDisabled]}
         >
-          <Text style={styles.submitText}>{locationLoading ? 'Getting location...' : 'Find technicians'}</Text>
-          <MaterialIcons name={locationLoading ? 'my-location' : 'arrow-forward'} size={20} color={Colors.light.text} />
+          <Text style={styles.submitText}>
+            {saving ? 'Saving address…' : addressLoading ? 'Loading address…' : locationLoading ? 'Getting location...' : 'Find technicians'}
+          </Text>
+          <MaterialIcons name={saving || locationLoading ? 'my-location' : 'arrow-forward'} size={20} color={Colors.light.text} />
         </Pressable>
       </View>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setDistrictPickerVisible(false)}
+        transparent
+        visible={districtPickerVisible}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.districtSheet}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Choose your district</Text>
+              <Pressable
+                accessibilityLabel="Close district selector"
+                accessibilityRole="button"
+                onPress={() => setDistrictPickerVisible(false)}
+                hitSlop={8}
+              >
+                <MaterialIcons name="close" size={23} color={Colors.light.text} />
+              </Pressable>
+            </View>
+            <ScrollView>
+              {districts.map((item) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: districtId === item.id }}
+                  key={item.id}
+                  onPress={() => {
+                    setDistrictId(item.id);
+                    setDistrictPickerVisible(false);
+                  }}
+                  style={styles.districtOption}
+                >
+                  <Text style={styles.districtOptionText}>{item.district_name}</Text>
+                  {districtId === item.id ? (
+                    <MaterialIcons name="check" size={20} color={Colors.light.backgroundSelected} />
+                  ) : null}
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -203,6 +497,11 @@ const styles = StyleSheet.create({
   stepLine: { width: 28, height: 1, marginHorizontal: 7, backgroundColor: '#64748B' },
   stepCaption: { marginLeft: 10, color: '#D6DFEA', fontSize: 12 },
   form: { paddingHorizontal: 20, paddingTop: 24 },
+  sectionTitle: { color: Colors.light.text, fontSize: 16, fontWeight: '700' },
+  addressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
+  addAddressText: { color: Colors.light.backgroundSelected, fontSize: 12, fontWeight: '700' },
+  addressHelper: { marginBottom: 15, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
+  addressLoading: { flexDirection: 'row', alignItems: 'center', gap: 9, marginVertical: 12 },
   label: { marginBottom: 9, color: Colors.light.text, fontSize: 14, fontWeight: '700' },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 22 },
   typeChip: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 20, backgroundColor: Colors.light.backgroundElement },
@@ -211,6 +510,9 @@ const styles = StyleSheet.create({
   typeChipTextSelected: { color: Colors.light.text },
   input: { minHeight: 52, marginBottom: 17, paddingHorizontal: 14, paddingVertical: 13, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 12, backgroundColor: Colors.light.backgroundElement, color: Colors.light.text, fontSize: 15 },
   inputError: { borderColor: '#B42318' },
+  districtSelect: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 17, paddingHorizontal: 14, borderWidth: 1, borderColor: '#D8E0E9', borderRadius: 12, backgroundColor: Colors.light.backgroundElement },
+  districtSelectText: { color: Colors.light.text, fontSize: 15 },
+  placeholder: { color: Colors.light.textSecondary },
   descriptionLabel: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   counter: { marginBottom: 9, color: Colors.light.textSecondary, fontSize: 12 },
   descriptionInput: { minHeight: 132, marginBottom: 7, lineHeight: 21 },
@@ -223,6 +525,13 @@ const styles = StyleSheet.create({
   privacyText: { flex: 1, color: Colors.light.textSecondary, fontSize: 12, lineHeight: 17 },
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D8E0E9', backgroundColor: Colors.light.background },
   submit: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 13, backgroundColor: Colors.light.backgroundSelected },
+  submitDisabled: { opacity: 0.65 },
   submitText: { color: Colors.light.text, fontSize: 15, fontWeight: '700' },
   pressed: { opacity: 0.82 },
+  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(12,27,51,0.45)' },
+  districtSheet: { maxHeight: '75%', paddingTop: 20, paddingBottom: 28, paddingHorizontal: 20, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: Colors.light.background },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sheetTitle: { color: Colors.light.text, fontSize: 18, fontWeight: '700' },
+  districtOption: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D8E0E9' },
+  districtOptionText: { color: Colors.light.text, fontSize: 15 },
 });
