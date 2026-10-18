@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ThemeProvider from '../components/ThemeProvider';
 import AuthScreen from '../components/auth-screen';
+import LoadingScreen from '../components/loading-screen';
 import SplashScreen from '../components/splash-screen';
 import { UserProvider, useUser } from '../context/UserContext';
 import { LocationProvider } from '../context/LocationContext';
@@ -19,9 +20,10 @@ function AppEntry() {
     return () => clearTimeout(timer);
   }, []);
 
-  const showSplash = !splashElapsed || authLoading;
-  const content = showSplash ? (
+  const content = !splashElapsed ? (
     <SplashScreen />
+  ) : authLoading ? (
+    <LoadingScreen />
   ) : !session ? (
     <AuthScreen />
   ) : (
