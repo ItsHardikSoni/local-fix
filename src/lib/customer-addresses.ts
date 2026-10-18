@@ -1,3 +1,4 @@
+import { sanitizeText } from './sanitize';
 import { supabase } from './supabase';
 
 export type StateOption = {
@@ -73,8 +74,17 @@ export async function saveCustomerAddress(
   addressId: string | null,
   input: CustomerAddressInput,
 ): Promise<CustomerAddress> {
+  const addressLine = sanitizeText(input.address_line, 500);
+  if (!addressLine) {
+    throw new Error('Enter a valid street address.');
+  }
   const values = {
-    ...input,
+    district_id: input.district_id,
+    address_line: addressLine,
+    society_name: input.society_name ? sanitizeText(input.society_name, 160) : null,
+    flat_number: input.flat_number ? sanitizeText(input.flat_number, 80) : null,
+    latitude: input.latitude,
+    longitude: input.longitude,
     customer_id: customerId,
     updated_at: new Date().toISOString(),
   };
