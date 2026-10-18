@@ -57,7 +57,7 @@ function AppEntry() {
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="help" options={{ title: 'Help & information' }} />
+      <Stack.Screen name="help" options={{ title: 'Help & information',headerShown: false }} />
     </Stack>
   );
 
