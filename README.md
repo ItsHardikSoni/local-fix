@@ -23,6 +23,32 @@ In the output, you'll find options to open the app in a
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
+## OTA Updates
+
+LocalFix uses `expo-updates` with EAS Update. Installed release builds check for compatible updates on launch; a downloaded update is used on the next app restart. The `fingerprint` runtime policy prevents updates from being delivered to builds with incompatible native code. Native dependency or configuration changes still require a new build.
+
+The project is not linked to an Expo account yet. Before the first EAS build, authenticate in the terminal and link the project:
+
+```sh
+npx eas-cli@latest login
+npx eas-cli@latest update:configure
+```
+
+`update:configure` adds the EAS project ID and update URL to `app.json`. The `preview` and `production` EAS Build profiles use separate update channels. Create and install a preview build before publishing updates:
+
+```sh
+npx eas-cli@latest build --profile preview --platform android
+npx eas-cli@latest update --channel preview --message "Preview update"
+```
+
+After verifying the preview, publish to production:
+
+```sh
+npx eas-cli@latest update --channel production --message "Describe the change"
+```
+
+Build iOS separately with `--platform ios` if needed. EAS Update sends JavaScript and bundled assets only; changes to native modules, app permissions, or native configuration require a new binary.
+
 ## Supabase Authentication
 
 Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the root `.env` using the project URL and publishable/anon key from your Supabase API settings. Use the project base URL (for example, `https://<project-ref>.supabase.co`), without `/rest/v1/`. The `.env` file is ignored by Git. Restart Expo after changing these values.
