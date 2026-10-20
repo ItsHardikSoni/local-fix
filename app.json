@@ -16,10 +16,12 @@
     "scheme": "localfix",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/icon.png"
+      "icon": "./assets/icon.png",
+      "bundleIdentifier": "com.ayushlabs.localfix"
     },
     "android": {
       "softwareKeyboardLayoutMode": "resize",
+      "package": "com.ayushlabs.localfix",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/icon.png",
